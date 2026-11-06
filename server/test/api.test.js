@@ -112,6 +112,13 @@ test('database migrations add message lifecycle fields and are idempotent', () =
   assert.ok(usageColumns.has('provider_id'));
   assert.ok(usageColumns.has('input_tokens'));
   assert.ok(usageColumns.has('status'));
+  const providerColumns = new Set(db.prepare('PRAGMA table_info(ai_providers)').all().map((column) => column.name));
+  assert.ok(providerColumns.has('api_key_encrypted'));
+  assert.ok(providerColumns.has('models_json'));
+  assert.ok(providerColumns.has('enabled'));
+  const settingsColumns = new Set(db.prepare('PRAGMA table_info(ai_settings)').all().map((column) => column.name));
+  assert.ok(settingsColumns.has('key'));
+  assert.ok(settingsColumns.has('value'));
 });
 
 test('versioned models endpoint does not claim an unconfigured model is connected', async () => {
@@ -1725,6 +1732,17 @@ test('admin provider management encrypts secrets, enforces role boundaries, and 
       email: 'provider-admin@example.com',
       password: 'provider-admin-password-strong',
     }).expect(200);
+
+    const previousNodeEnv = config.nodeEnv;
+    config.nodeEnv = 'production';
+    await admin.post('/api/v1/admin/providers').set(originHeaders).send({
+      id: 'http-production-blocked',
+      name: 'HTTP Must Be Blocked',
+      baseUrl: 'http://127.0.0.1:4000/v1',
+      apiKey: 'test-secret',
+      models: [{ id: 'test-model' }],
+    }).expect(400);
+    config.nodeEnv = previousNodeEnv;
 
     adminProviderServer = createServer((incoming, outgoing) => {
       receivedAuthorization = incoming.headers.authorization || null;
