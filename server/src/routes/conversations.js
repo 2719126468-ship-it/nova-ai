@@ -417,7 +417,7 @@ router.post('/:id/messages', generationLimiter, async (req, res, next) => {
 
     try {
       const promptResult = buildPrompt(conversationId, parsed.data.content, selectedModel);
-      if (!promptResult.prompt) return res.status(413).json({ ...promptResult.error, contextPolicy: promptResult.contextPolicy });
+      if (!promptResult.prompt) return res.status(413).json({ error: promptResult.error.code, message: promptResult.error.message, contextPolicy: promptResult.contextPolicy });
       const usageRecord = startUsageRecord({
         userId: req.user.id,
         providerId: selectedModel.providerId,
@@ -507,7 +507,7 @@ router.post('/:id/messages/stream', generationLimiter, async (req, res, next) =>
   const promptResult = buildPrompt(conversationId, parsed.data.content, selectedModel);
   if (!promptResult.prompt) {
     activeGenerations.delete(generationKey);
-    return res.status(413).json({ ...promptResult.error, contextPolicy: promptResult.contextPolicy });
+    return res.status(413).json({ error: promptResult.error.code, message: promptResult.error.message, contextPolicy: promptResult.contextPolicy });
   }
   const prompt = promptResult.prompt;
   const insert = db.prepare('INSERT INTO messages(conversation_id,role,content,status) VALUES(?,?,?,?)');
@@ -574,7 +574,7 @@ router.put('/:id/messages/:messageId/stream', generationLimiter, async (req, res
   const promptResult = buildPrompt(conversationId, parsed.data.content, selectedModel, messageId);
   if (!promptResult.prompt) {
     activeGenerations.delete(generationKey);
-    return res.status(413).json({ ...promptResult.error, contextPolicy: promptResult.contextPolicy });
+    return res.status(413).json({ error: promptResult.error.code, message: promptResult.error.message, contextPolicy: promptResult.contextPolicy });
   }
   const prompt = promptResult.prompt;
 
@@ -720,7 +720,7 @@ router.post('/:id/messages/:messageId/retry/stream', generationLimiter, async (r
   const promptResult = buildPrompt(conversationId, userMessage.content, selectedModel, userMessage.id);
   if (!promptResult.prompt) {
     activeGenerations.delete(generationKey);
-    return res.status(413).json({ ...promptResult.error, contextPolicy: promptResult.contextPolicy });
+    return res.status(413).json({ error: promptResult.error.code, message: promptResult.error.message, contextPolicy: promptResult.contextPolicy });
   }
   const prompt = promptResult.prompt;
 
