@@ -1322,3 +1322,109 @@ test('account deletion requires password and email confirmation then cascades pr
   assert.equal(retainedArticle.author_id, null);
   assert.equal(retainedArticle.body, 'Site content remains');
 });
+
+test('non-streaming client disconnect aborts upstream request and releases the generation lock', async () => {
+  let signalUpstreamStarted;
+  let signalUpstreamClosed;
+  const upstreamStarted = new Promise((resolve) => { signalUpstreamStarted = resolve; });
+  const upstreamClosed = new Promise((resolve) => { signalUpstreamClosed = resolve; });
+  let providerCalls = 0;
+  providerServer = createServer((incoming, outgoing) => {
+    incoming.resume();
+    incoming.on('end', () => {
+      providerCalls += 1;
+      outgoing.writeHead(200, { 'Content-Type': 'application/json' });
+      if (providerCalls === 1) {
+        signalUpstreamStarted();
+        outgoing.on('close', signalUpstreamClosed);
+        return;
+      }
+      outgoing.end(JSON.stringify({
+        choices: [{ message: { content: 'Request after cancellation succeeded' } }],
+      }));
+    });
+  });
+  await new Promise((resolve) => providerServer.listen(0, '127.0.0.1', resolve));
+
+  const previous = {
+    aiBaseUrl: config.aiBaseUrl,
+    aiApiKey: config.aiApiKey,
+    aiModel: config.aiModel,
+  };
+  config.aiBaseUrl = 'http://127.0.0.1:' + providerServer.address().port + '/v1';
+  config.aiApiKey = 'non-stream-cancel-test-secret';
+  config.aiModel = 'mock-non-stream-cancel-model';
+
+  const clientServer = createServer(app);
+  try {
+    const registration = await request(app).post('/api/v1/auth/register').set(originHeaders).send({
+      email: 'non-stream-cancel@example.com',
+      name: 'Non-stream Cancel Tester',
+      password: 'non-stream-cancel-password-strong',
+    }).expect(201);
+    const cookie = registration.headers['set-cookie']
+      .find((value) => value.startsWith('nova_session='))
+      .split(';')[0];
+    const created = await request(app).post('/api/v1/conversations')
+      .set({ ...originHeaders, Cookie: cookie })
+      .send({ title: 'Non-stream cancellation test' }).expect(201);
+    const conversationId = created.body.conversation.id;
+
+    await new Promise((resolve) => clientServer.listen(0, '127.0.0.1', resolve));
+    const url = 'http://127.0.0.1:' + clientServer.address().port
+      + '/api/v1/conversations/' + conversationId + '/messages';
+
+    const controller = new AbortController();
+    const abortedRequest = fetch(url, {
+      method: 'POST',
+      headers: {
+        ...originHeaders,
+        Cookie: cookie,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ content: 'Cancel this non-streaming request' }),
+      signal: controller.signal,
+    }).catch((error) => error);
+
+    await Promise.race([
+      upstreamStarted,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Provider request did not start')), 1500)),
+    ]);
+    controller.abort();
+    const abortedResult = await abortedRequest;
+    assert.equal(abortedResult?.name, 'AbortError');
+
+    await Promise.race([
+      upstreamClosed,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Non-streaming provider request was not aborted')), 1500)),
+    ]);
+
+    const beforeRecovery = db.prepare(
+      'SELECT COUNT(*) AS count FROM messages WHERE conversation_id=?',
+    ).get(conversationId);
+    assert.equal(beforeRecovery.count, 0, 'cancelled non-streaming request must not persist a partial turn');
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const recovery = await fetch(url, {
+      method: 'POST',
+      headers: {
+        ...originHeaders,
+        Cookie: cookie,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ content: 'Try again after cancellation' }),
+    });
+    assert.equal(recovery.status, 201, 'generation lock should be released after client disconnect');
+    const payload = await recovery.json();
+    assert.equal(payload.assistantMessage.content, 'Request after cancellation succeeded');
+    assert.equal(providerCalls, 2);
+  } finally {
+    if (clientServer.listening) await new Promise((resolve) => clientServer.close(resolve));
+    config.aiBaseUrl = previous.aiBaseUrl;
+    config.aiApiKey = previous.aiApiKey;
+    config.aiModel = previous.aiModel;
+    if (providerServer?.listening) await new Promise((resolve) => providerServer.close(resolve));
+    providerServer = null;
+  }
+});
+
