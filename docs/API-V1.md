@@ -133,6 +133,28 @@ Updates must include the version previously read: `{ "content": "# Updated", "ex
 
 A document may be linked only to a project owned by the same account. API ownership checks and SQLite triggers both enforce this rule. Attempts to read, modify, or delete another user's document return 404. Deleting a project preserves owned documents and clears `projectId`; deleting an account cascades its owned documents. Account export includes the complete Markdown body and increments its schema version to 5.
 
+## Project context and files
+
+All endpoints below require an authenticated session and are scoped to the owner of the project.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | /api/v1/projects/:id/context | Read project instructions, instruction version, and file metadata |
+| PUT | /api/v1/projects/:id/context | Update project instructions using `expectedVersion` |
+| GET | /api/v1/projects/:id/files | List project file metadata without returning file content |
+| POST | /api/v1/projects/:id/files | Upload one UTF-8 text file as `application/octet-stream` |
+| PATCH | /api/v1/projects/:id/files/:fileId | Set `includeInContext` to explicitly opt a file into linked project conversations |
+| GET | /api/v1/projects/:id/files/:fileId/download | Download the original uploaded file |
+| DELETE | /api/v1/projects/:id/files/:fileId | Delete an owned project file |
+
+Project instruction updates require `{ "instructions": "...", "expectedVersion": 1 }`. Instructions are limited to 16,000 JavaScript characters. Successful updates increment `instructionsVersion`; stale versions return HTTP 409 `PROJECT_CONTEXT_VERSION_CONFLICT`.
+
+Uploads accept only `.txt`, `.md`, `.csv`, and `.json` files containing valid UTF-8 text (JSON files must parse). A file is limited to 2 MiB; a project may contain at most 20 files and 10 MiB in total. File names are sanitized, file contents are hashed, and duplicate content in the same project returns 409. Project ownership is checked by the API and SQLite triggers. File contents are never returned in metadata endpoints.
+
+Every file is uploaded with `includeInContext=false`. The owner must explicitly opt a file in. When a conversation is linked to a project, NOVA may add the project's instructions and selected text excerpts to the prompt; the context is restricted to the same account, at most 4 files and 12,000 characters total. Project instructions are bounded separately. Selected file content is labelled as untrusted reference material and must not be treated as instructions. If the project context does not fit alongside the current user message and model budget, NOVA omits the project context rather than truncating the current message. The chat `contextPolicy` describes whether project context/files were included, omitted or truncated.
+
+Account export schema version 6 includes project instructions, their version, and base64-encoded project file contents. Account deletion removes project files through the user/project foreign-key lifecycle.
+
 ## Conversations
 
 All endpoints below require an authenticated session.
