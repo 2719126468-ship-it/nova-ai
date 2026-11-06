@@ -339,3 +339,26 @@ test('stream endpoint enforces one active generation per authenticated user', as
     providerServer = null;
   }
 });
+
+
+test('AI generation requests are rate-limited per authenticated user', async () => {
+  const agent = request.agent(app);
+  await agent.post('/api/v1/auth/register').set(originHeaders).send({
+    email: 'rate-limit@example.com',
+    name: 'Rate Limit Tester',
+    password: 'another-strong-test-password',
+  }).expect(201);
+  const created = await agent.post('/api/v1/conversations').set(originHeaders)
+    .send({ title: 'Rate limit test' }).expect(201);
+  const url = '/api/v1/conversations/' + created.body.conversation.id + '/messages/stream';
+
+  for (let index = 1; index <= 6; index += 1) {
+    const response = await agent.post(url).set(originHeaders)
+      .send({ content: '' });
+    assert.equal(response.status, 400, 'request ' + index + ' should reach message validation');
+  }
+
+  const limited = await agent.post(url).set(originHeaders).send({ content: '' }).expect(429);
+  assert.equal(limited.body.error, 'AI_RATE_LIMITED');
+  assert.equal(limited.body.message, '发送过于频繁，请稍后再试。');
+});
