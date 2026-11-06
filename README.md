@@ -191,6 +191,14 @@ API 集成测试会使用临时 SQLite 文件，不会覆盖你的开发数据�
 4. 聊天目前支持持久化会话结构与非流式模型请求，还没有流式输出、附件和工具调用。
 5. 管理后台提供基础用户角色和 CMS 管理，不包含完整审计日志、封禁工作流或运营分析。
 
+## 产品基线与代码审计
+
+- [正式产品基线 / NOVA-PRD-1.0](docs/PRODUCT-BASELINE.md)
+- [V0.1 源码实现审计](docs/audits/NOVA-V0.1-IMPLEMENTATION-AUDIT.md)
+- [技术债清单](docs/audits/TECH-DEBT.md)
+- [安全与隐私审查](docs/audits/SECURITY-REVIEW.md)
+- [V0.1 开发任务与验收清单](docs/audits/V0.1-BACKLOG.md)
+
 ## 开发路线
 
 请参阅 [`docs/ROADMAP.md`](docs/ROADMAP.md) 与 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
