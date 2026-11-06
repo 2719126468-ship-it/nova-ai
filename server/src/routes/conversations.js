@@ -155,9 +155,9 @@ async function streamAssistantResponse(res, prompt, pending, generationKey, hook
       db.prepare("UPDATE messages SET content=?,status='complete',error_code=NULL WHERE id=?")
         .run(content, pending.assistantMessageId);
       assistantMessage = db.prepare(
-        'SELECT id,role,content,status,error_code,created_at,
-        (SELECT COUNT(*) FROM message_versions v WHERE v.message_id=messages.id) AS version_count
-      FROM messages WHERE id=?',
+        `SELECT id,role,content,status,error_code,created_at,
+          (SELECT COUNT(*) FROM message_versions v WHERE v.message_id=messages.id) AS version_count
+        FROM messages WHERE id=?`,
       ).get(pending.assistantMessageId);
     }
     finishUsageRecord(hooks.usageRecord, { status: 'succeeded', usage: providerUsage });
@@ -219,9 +219,9 @@ router.get('/:id', (req, res) => {
   const conversation = findConversation(Number(req.params.id), req.user.id);
   if (!conversation) return res.status(404).json({ error: 'NOT_FOUND', message: '对话不存在。' });
   const messages = db.prepare(
-    'SELECT m.id,m.role,m.content,m.status,m.error_code,m.created_at,
+    `SELECT m.id,m.role,m.content,m.status,m.error_code,m.created_at,
       (SELECT COUNT(*) FROM message_versions v WHERE v.message_id=m.id) AS version_count
-    FROM messages m WHERE m.conversation_id=? ORDER BY m.id',
+    FROM messages m WHERE m.conversation_id=? ORDER BY m.id`,
   ).all(conversation.id);
   res.json({ conversation, messages });
 });
