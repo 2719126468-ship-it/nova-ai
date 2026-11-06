@@ -541,6 +541,7 @@ router.put('/:id/messages/:messageId/stream', generationLimiter, async (req, res
       "SELECT id,content,status,error_code FROM messages WHERE conversation_id=? AND id>? AND id<? AND role='assistant' ORDER BY id LIMIT 1",
     ).get(conversationId, messageId, pending.assistantMessageId);
     if (previousAssistant) {
+      copyMessageVersions(previousAssistant.id, pending.assistantMessageId);
       archiveMessageVersion(
         pending.assistantMessageId,
         previousAssistant.content,
@@ -548,7 +549,6 @@ router.put('/:id/messages/:messageId/stream', generationLimiter, async (req, res
         previousAssistant.error_code,
         'edit_regeneration',
       );
-      copyMessageVersions(previousAssistant.id, pending.assistantMessageId);
     }
 
     db.prepare('DELETE FROM messages WHERE conversation_id=? AND id>? AND id<>?')
@@ -663,6 +663,7 @@ router.post('/:id/messages/:messageId/retry/stream', generationLimiter, async (r
   }
 
   const commitRetry = db.transaction((assistantContent) => {
+    copyMessageVersions(target.id, pending.assistantMessageId);
     archiveMessageVersion(
       pending.assistantMessageId,
       target.content,
@@ -670,7 +671,6 @@ router.post('/:id/messages/:messageId/retry/stream', generationLimiter, async (r
       target.error_code,
       'retry',
     );
-    copyMessageVersions(target.id, pending.assistantMessageId);
     db.prepare('DELETE FROM messages WHERE conversation_id=? AND id>=? AND id<>?')
       .run(conversationId, messageId, pending.assistantMessageId);
     db.prepare("UPDATE messages SET content=?,status='complete',error_code=NULL WHERE id=? AND conversation_id=?")
