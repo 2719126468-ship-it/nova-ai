@@ -69,7 +69,8 @@ export function createApp() {
   });
   const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: 20,
+    // Keep production at 20 attempts; isolated integration tests create many temporary accounts.
+    limit: config.nodeEnv === 'test' ? 100 : 20,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     message: { error: 'AUTH_RATE_LIMITED', message: '登录或注册尝试过于频繁，请稍后再试。' },
