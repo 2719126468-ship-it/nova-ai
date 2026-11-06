@@ -101,7 +101,11 @@ test('database migrations add message lifecycle fields and are idempotent', () =
   assert.ok(columns.has('status'));
   assert.ok(columns.has('error_code'));
   const versions = db.prepare('SELECT version FROM schema_migrations ORDER BY version').all();
-  assert.deepEqual(versions.map((row) => row.version), [1, 2, 3]);
+  assert.deepEqual(versions.map((row) => row.version), [1, 2, 3, 4]);
+  const versionColumns = new Set(db.prepare('PRAGMA table_info(message_versions)').all().map((column) => column.name));
+  assert.ok(versionColumns.has('message_id'));
+  assert.ok(versionColumns.has('content'));
+  assert.ok(versionColumns.has('source'));
   const usageColumns = new Set(db.prepare('PRAGMA table_info(ai_usage)').all().map((column) => column.name));
   assert.ok(usageColumns.has('request_id'));
   assert.ok(usageColumns.has('provider_id'));
@@ -995,6 +999,31 @@ test('editing a user message replaces that turn and deletes later conversation h
     ]);
     const usage = db.prepare("SELECT operation,status,error_code FROM ai_usage WHERE user_id=(SELECT id FROM users WHERE email=?) ORDER BY id DESC LIMIT 1").get('message-edit@example.com');
     assert.deepEqual(usage, { operation: 'edit', status: 'succeeded', error_code: null });
+    const currentAssistant = db.prepare(
+      "SELECT id FROM messages WHERE conversation_id=? AND role='assistant' ORDER BY id DESC LIMIT 1",
+    ).get(conversationId);
+    const versionsResponse = await owner.get(
+      '/api/v1/conversations/' + conversationId + '/messages/' + currentAssistant.id + '/versions',
+    ).set(originHeaders).expect(200);
+    assert.equal(versionsResponse.body.versions.length, 1);
+    assert.equal(versionsResponse.body.versions[0].content, 'old response');
+    assert.equal(versionsResponse.body.versions[0].source, 'edit_regeneration');
+    await other.get(
+      '/api/v1/conversations/' + conversationId + '/messages/' + currentAssistant.id + '/versions',
+    ).set(originHeaders).expect(404);
+    await other.post(
+      '/api/v1/conversations/' + conversationId + '/messages/' + currentAssistant.id + '/restore',
+    ).set(originHeaders).send({ versionId: versionsResponse.body.versions[0].id }).expect(404);
+
+    const restored = await owner.post(
+      '/api/v1/conversations/' + conversationId + '/messages/' + currentAssistant.id + '/restore',
+    ).set(originHeaders).send({ versionId: versionsResponse.body.versions[0].id }).expect(200);
+    assert.equal(restored.body.message.content, 'old response');
+    assert.equal(restored.body.message.status, 'complete');
+    assert.equal(restored.body.message.version_count, 1);
+    assert.equal(restored.body.versions.length, 1);
+    assert.equal(restored.body.versions[0].content, 'Rewritten assistant message');
+    assert.equal(restored.body.versions[0].source, 'restore');
   } finally {
     config.aiBaseUrl = previous.aiBaseUrl;
     config.aiApiKey = previous.aiApiKey;
@@ -1067,6 +1096,18 @@ test('retrying a failed assistant message replaces it only after a successful re
     ]);
     const usage = db.prepare("SELECT operation,status,error_code FROM ai_usage WHERE user_id=(SELECT id FROM users WHERE email=?) ORDER BY id DESC LIMIT 1").get('message-retry@example.com');
     assert.deepEqual(usage, { operation: 'retry', status: 'succeeded', error_code: null });
+    const currentAssistant = db.prepare(
+      "SELECT id,version_count FROM (SELECT id,(SELECT COUNT(*) FROM message_versions v WHERE v.message_id=messages.id) AS version_count FROM messages WHERE conversation_id=? AND role='assistant' ORDER BY id DESC LIMIT 1)",
+    ).get(id);
+    const versions = db.prepare(
+      'SELECT content,status,source FROM message_versions WHERE message_id=? ORDER BY id DESC',
+    ).all(currentAssistant.id);
+    assert.equal(currentAssistant.version_count, 1);
+    assert.deepEqual(versions, [{
+      content: 'partial broken output',
+      status: 'failed',
+      source: 'retry',
+    }]);
   } finally {
     config.aiBaseUrl = previous.aiBaseUrl;
     config.aiApiKey = previous.aiApiKey;
@@ -1361,8 +1402,12 @@ test('account export includes owned work but excludes password and session crede
     .send({ title: 'Export project', description: 'private description', content: 'project notes' }).expect(201);
   const conversation = await agent.post('/api/v1/conversations').set(originHeaders)
     .send({ title: 'Export conversation' }).expect(201);
-  db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)')
+  const exportedUserMessage = db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)')
     .run(conversation.body.conversation.id, 'user', 'My private chat message');
+  const exportedAssistantMessage = db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)')
+    .run(conversation.body.conversation.id, 'assistant', 'Previous assistant answer');
+  db.prepare('INSERT INTO message_versions(message_id,content,status,error_code,source) VALUES(?,?,?,?,?)')
+    .run(exportedAssistantMessage.lastInsertRowid, 'An older assistant answer', 'complete', null, 'edit_regeneration');
   await agent.post('/api/v1/projects/' + project.body.project.id + '/conversations')
     .set(originHeaders).send({ conversationId: conversation.body.conversation.id }).expect(201);
 
@@ -1379,6 +1424,8 @@ test('account export includes owned work but excludes password and session crede
   assert.equal(response.body.projects[0].content, 'project notes');
   assert.equal(response.body.conversations.length, 1);
   assert.equal(response.body.messages[0].content, 'My private chat message');
+  assert.equal(response.body.messageVersions.length, 1);
+  assert.equal(response.body.messageVersions[0].content, 'An older assistant answer');
   assert.equal(response.body.usage.length, 1);
   assert.equal(response.body.usage[0].request_id, 'export-usage-request');
   assert.equal(response.body.usage[0].total_tokens, 12);
@@ -1408,8 +1455,12 @@ test('account deletion requires password and email confirmation then cascades pr
   const user = db.prepare('SELECT id FROM users WHERE email=?').get('account-delete@example.com');
   const projectId = project.body.project.id;
   const conversationId = conversation.body.conversation.id;
-  db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)')
+  const deletedUserMessage = db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)')
     .run(conversationId, 'user', 'delete this message');
+  const deletedAssistantMessage = db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)')
+    .run(conversationId, 'assistant', 'delete this answer');
+  db.prepare('INSERT INTO message_versions(message_id,content,status,source) VALUES(?,?,?,?)')
+    .run(deletedAssistantMessage.lastInsertRowid, 'older answer to delete', 'complete', 'retry');
   await agent.post('/api/v1/projects/' + projectId + '/conversations')
     .set(originHeaders).send({ conversationId }).expect(201);
   db.prepare('INSERT INTO articles(slug,title,body,author_id) VALUES(?,?,?,?)')
@@ -1436,6 +1487,7 @@ test('account deletion requires password and email confirmation then cascades pr
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM projects WHERE user_id=?').get(user.id).count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM conversations WHERE user_id=?').get(user.id).count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM messages WHERE conversation_id=?').get(conversationId).count, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM message_versions WHERE message_id=?').get(deletedAssistantMessage.lastInsertRowid).count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM project_conversations WHERE user_id=?').get(user.id).count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM ai_usage WHERE user_id=?').get(user.id).count, 0);
   const retainedArticle = db.prepare('SELECT author_id,body FROM articles WHERE slug=?').get('account-delete-article');
