@@ -21,13 +21,13 @@ router.get('/usage', (req, res) => {
   const summary = db.prepare(`
     SELECT
       COUNT(*) AS requests,
-      SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END) AS succeeded,
-      SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed,
-      SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END) AS cancelled,
-      SUM(CASE WHEN usage_source='provider' THEN 1 ELSE 0 END) AS providerReportedRequests,
-      SUM(input_tokens) AS reportedInputTokens,
-      SUM(output_tokens) AS reportedOutputTokens,
-      SUM(total_tokens) AS reportedTotalTokens
+      COALESCE(SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END),0) AS succeeded,
+      COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failed,
+      COALESCE(SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END),0) AS cancelled,
+      COALESCE(SUM(CASE WHEN usage_source='provider' THEN 1 ELSE 0 END),0) AS providerReportedRequests,
+      COALESCE(SUM(input_tokens),0) AS reportedInputTokens,
+      COALESCE(SUM(output_tokens),0) AS reportedOutputTokens,
+      COALESCE(SUM(total_tokens),0) AS reportedTotalTokens
     FROM ai_usage
   `).get();
   const records = db.prepare(`
