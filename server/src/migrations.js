@@ -125,6 +125,46 @@ const migrations = [
       `);
     },
   },
+  {
+    version: 7,
+    name: 'workspace-documents',
+    up(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS documents (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+          title TEXT NOT NULL CHECK(length(trim(title)) BETWEEN 1 AND 120),
+          content TEXT NOT NULL DEFAULT '' CHECK(length(content) <= 200000),
+          version INTEGER NOT NULL DEFAULT 1 CHECK(version >= 1),
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_documents_user_updated
+          ON documents(user_id, updated_at DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_documents_project_updated
+          ON documents(user_id, project_id, updated_at DESC, id DESC);
+
+        CREATE TRIGGER IF NOT EXISTS documents_project_owner_insert
+        BEFORE INSERT ON documents
+        WHEN NEW.project_id IS NOT NULL
+        BEGIN
+          SELECT CASE WHEN NOT EXISTS (
+            SELECT 1 FROM projects WHERE id=NEW.project_id AND user_id=NEW.user_id
+          ) THEN RAISE(ABORT, 'document_project_owner_mismatch') END;
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS documents_project_owner_update
+        BEFORE UPDATE OF project_id,user_id ON documents
+        WHEN NEW.project_id IS NOT NULL
+        BEGIN
+          SELECT CASE WHEN NOT EXISTS (
+            SELECT 1 FROM projects WHERE id=NEW.project_id AND user_id=NEW.user_id
+          ) THEN RAISE(ABORT, 'document_project_owner_mismatch') END;
+        END;
+      `);
+    },
+  },
 
 ];
 

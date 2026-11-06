@@ -75,6 +75,108 @@ test('authenticated users can create, update and delete their own projects', asy
   await agent.get('/api/projects/' + id).set(originHeaders).expect(404);
 });
 
+test('documents API enforces ownership, project isolation, validation, and optimistic concurrency', async () => {
+  const owner = request.agent(app);
+  const other = request.agent(app);
+  await owner.post('/api/v1/auth/register').set(originHeaders).send({
+    email: 'documents-owner@example.com',
+    name: 'Document Owner',
+    password: 'documents-owner-password-strong',
+  }).expect(201);
+  await other.post('/api/v1/auth/register').set(originHeaders).send({
+    email: 'documents-other@example.com',
+    name: 'Other Document User',
+    password: 'documents-other-password-strong',
+  }).expect(201);
+
+  const ownerProject = await owner.post('/api/v1/projects').set(originHeaders)
+    .send({ title: 'Owner project' }).expect(201);
+  const otherProject = await other.post('/api/v1/projects').set(originHeaders)
+    .send({ title: 'Other project' }).expect(201);
+  const ownerId = db.prepare('SELECT id FROM users WHERE email=?').get('documents-owner@example.com').id;
+
+  const created = await owner.post('/api/v1/documents').set(originHeaders).send({
+    title: 'Research notes',
+    content: '# First draft\nPrivate Markdown content',
+    projectId: ownerProject.body.project.id,
+  }).expect(201);
+  const document = created.body.document;
+  await owner.post('/api/v1/documents').set(originHeaders).send({
+    title: '   ',
+    content: 'invalid title',
+  }).expect(400);
+  await owner.post('/api/v1/documents').set(originHeaders).send({
+    title: 'Oversized document',
+    content: 'x'.repeat(200001),
+  }).expect(400);
+  await owner.put('/api/v1/documents/' + document.id).set(originHeaders).send({
+    title: 'Missing version',
+  }).expect(400);
+  assert.equal(document.title, 'Research notes');
+  assert.equal(document.projectId, ownerProject.body.project.id);
+  assert.equal(document.version, 1);
+  assert.equal(document.content, '# First draft\nPrivate Markdown content');
+
+  await owner.get('/api/v1/documents').expect(200).then((response) => {
+    assert.equal(response.body.total, 1);
+    assert.equal(response.body.documents[0].contentLength, document.content.length);
+    assert.equal(Object.hasOwn(response.body.documents[0], 'content'), false);
+  });
+  await owner.get('/api/v1/documents?q=research&projectId=' + ownerProject.body.project.id)
+    .expect(200).then((response) => assert.equal(response.body.documents.length, 1));
+  await owner.get('/api/v1/documents?limit=0').expect(400);
+  await owner.get('/api/v1/documents?projectId=' + otherProject.body.project.id).expect(404);
+
+  const detail = await owner.get('/api/v1/documents/' + document.id).expect(200);
+  assert.equal(detail.body.document.content, document.content);
+  assert.equal(detail.body.document.version, 1);
+
+  const updated = await owner.put('/api/v1/documents/' + document.id).set(originHeaders).send({
+    title: 'Research notes edited',
+    content: '# Updated draft\nNew content',
+    expectedVersion: 1,
+  }).expect(200);
+  assert.equal(updated.body.document.version, 2);
+  assert.equal(updated.body.document.projectId, ownerProject.body.project.id);
+  assert.equal(updated.body.document.content, '# Updated draft\nNew content');
+
+  const conflict = await owner.put('/api/v1/documents/' + document.id).set(originHeaders).send({
+    content: 'stale editor content',
+    expectedVersion: 1,
+  }).expect(409);
+  assert.equal(conflict.body.error, 'DOCUMENT_VERSION_CONFLICT');
+  assert.equal(conflict.body.currentVersion, 2);
+
+  await owner.post('/api/v1/documents').set(originHeaders).send({
+    title: 'Cross-project attempt',
+    projectId: otherProject.body.project.id,
+  }).expect(404);
+  await owner.put('/api/v1/documents/' + document.id).set(originHeaders).send({
+    projectId: otherProject.body.project.id,
+    expectedVersion: 2,
+  }).expect(404);
+  assert.throws(() => db.prepare(
+    'INSERT INTO documents(user_id,project_id,title,content) VALUES(?,?,?,?)',
+  ).run(ownerId, otherProject.body.project.id, 'Trigger guard', ''), /document_project_owner_mismatch/);
+
+  await other.get('/api/v1/documents/' + document.id).expect(404);
+  await other.put('/api/v1/documents/' + document.id).set(originHeaders).send({
+    title: 'Should not be allowed',
+    expectedVersion: 2,
+  }).expect(404);
+  await other.delete('/api/v1/documents/' + document.id).set(originHeaders).expect(404);
+  assert.equal(db.prepare('SELECT title FROM documents WHERE id=? AND user_id=?')
+    .get(document.id, ownerId).title, 'Research notes edited');
+
+  await owner.delete('/api/v1/projects/' + ownerProject.body.project.id).set(originHeaders).expect(200);
+  const unlinked = await owner.get('/api/v1/documents/' + document.id).expect(200);
+  assert.equal(unlinked.body.document.projectId, null);
+
+  await owner.delete('/api/v1/documents/' + document.id).set(originHeaders).expect(200);
+  await owner.get('/api/v1/documents/' + document.id).expect(404);
+  await owner.delete('/api/v1/documents/not-a-number').set(originHeaders).expect(400);
+});
+
 test('mutating requests without the application request header are rejected', async () => {
   const response = await request(app).post('/api/auth/login')
     .set('Origin', 'http://localhost:5173')
@@ -102,7 +204,7 @@ test('database migrations add message lifecycle fields and are idempotent', () =
   assert.ok(columns.has('status'));
   assert.ok(columns.has('error_code'));
   const versions = db.prepare('SELECT version FROM schema_migrations ORDER BY version').all();
-  assert.deepEqual(versions.map((row) => row.version), [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(versions.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7]);
   const versionColumns = new Set(db.prepare('PRAGMA table_info(message_versions)').all().map((column) => column.name));
   assert.ok(versionColumns.has('message_id'));
   assert.ok(versionColumns.has('content'));
@@ -125,6 +227,15 @@ test('database migrations add message lifecycle fields and are idempotent', () =
   assert.ok(contextColumns.has('context_tokens'));
   assert.ok(contextColumns.has('source'));
   assert.ok(contextColumns.has('checked_at'));
+  const documentColumns = new Set(db.prepare('PRAGMA table_info(documents)').all().map((column) => column.name));
+  assert.ok(documentColumns.has('user_id'));
+  assert.ok(documentColumns.has('project_id'));
+  assert.ok(documentColumns.has('title'));
+  assert.ok(documentColumns.has('content'));
+  assert.ok(documentColumns.has('version'));
+  const documentTriggers = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='documents'").all().map((row) => row.name));
+  assert.ok(documentTriggers.has('documents_project_owner_insert'));
+  assert.ok(documentTriggers.has('documents_project_owner_update'));
 });
 
 test('versioned models endpoint does not claim an unconfigured model is connected', async () => {
@@ -1576,6 +1687,11 @@ test('account export includes owned work but excludes password and session crede
   }).expect(201);
   const project = await agent.post('/api/v1/projects').set(originHeaders)
     .send({ title: 'Export project', description: 'private description', content: 'project notes' }).expect(201);
+  const exportedDocument = await agent.post('/api/v1/documents').set(originHeaders).send({
+    title: 'Exported document',
+    content: '# Account document',
+    projectId: project.body.project.id,
+  }).expect(201);
   const conversation = await agent.post('/api/v1/conversations').set(originHeaders)
     .send({ title: 'Export conversation' }).expect(201);
   const exportedUserMessage = db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)')
@@ -1598,6 +1714,10 @@ test('account export includes owned work but excludes password and session crede
   assert.equal(response.body.account.email, 'account-export@example.com');
   assert.equal(response.body.projects.length, 1);
   assert.equal(response.body.projects[0].content, 'project notes');
+  assert.equal(response.body.schemaVersion, 5);
+  assert.equal(response.body.documents.length, 1);
+  assert.equal(response.body.documents[0].id, exportedDocument.body.document.id);
+  assert.equal(response.body.documents[0].content, '# Account document');
   assert.equal(response.body.conversations.length, 1);
   assert.equal(response.body.messages[0].content, 'My private chat message');
   assert.equal(response.body.messageVersions.length, 1);
@@ -1626,6 +1746,11 @@ test('account deletion requires password and email confirmation then cascades pr
   }).expect(201);
   const project = await agent.post('/api/v1/projects').set(originHeaders)
     .send({ title: 'Delete project', description: '', content: 'delete me' }).expect(201);
+  const deletedDocument = await agent.post('/api/v1/documents').set(originHeaders).send({
+    title: 'Document to delete',
+    content: 'Private content',
+    projectId: project.body.project.id,
+  }).expect(201);
   const conversation = await agent.post('/api/v1/conversations').set(originHeaders)
     .send({ title: 'Delete conversation' }).expect(201);
   const user = db.prepare('SELECT id FROM users WHERE email=?').get('account-delete@example.com');
@@ -1661,6 +1786,8 @@ test('account deletion requires password and email confirmation then cascades pr
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM users WHERE id=?').get(user.id).count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id=?').get(user.id).count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM projects WHERE user_id=?').get(user.id).count, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM documents WHERE user_id=?').get(user.id).count, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM documents WHERE id=?').get(deletedDocument.body.document.id).count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM conversations WHERE user_id=?').get(user.id).count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM messages WHERE conversation_id=?').get(conversationId).count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM message_versions WHERE message_id=?').get(deletedAssistantMessage.lastInsertRowid).count, 0);

@@ -79,6 +79,9 @@ router.get('/export', requireAuth, (req, res, next) => {
     const projects = db.prepare(
       'SELECT id,title,description,content,created_at,updated_at FROM projects WHERE user_id=? ORDER BY id',
     ).all(userId);
+    const documents = db.prepare(
+      'SELECT id,title,content,project_id AS projectId,version,created_at AS createdAt,updated_at AS updatedAt FROM documents WHERE user_id=? ORDER BY id',
+    ).all(userId);
     const conversations = db.prepare(
       'SELECT id,title,created_at,updated_at FROM conversations WHERE user_id=? ORDER BY id',
     ).all(userId);
@@ -115,10 +118,11 @@ router.get('/export', requireAuth, (req, res, next) => {
       'Content-Disposition': 'attachment; filename="nova-account-export-' + userId + '.json"',
     });
     res.json({
-      schemaVersion: 4,
+      schemaVersion: 5,
       exportedAt: new Date().toISOString(),
       account,
       projects,
+      documents,
       conversations,
       messages,
       messageVersions,
@@ -164,7 +168,7 @@ router.delete('/me', requireAuth, async (req, res, next) => {
     res.set('Cache-Control', 'no-store');
     res.json({
       success: true,
-      message: '账户、项目、对话、消息和登录会话已删除。已发布的 Research 内容会保留，作者关联已清除。',
+      message: '账户、项目、文档、对话、消息和登录会话已删除。已发布的 Research 内容会保留，作者关联已清除。',
     });
   } catch (error) {
     next(error);

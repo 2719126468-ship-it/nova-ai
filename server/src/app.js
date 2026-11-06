@@ -10,6 +10,7 @@ import { probeModel } from './services/model-health.js';
 import { requireAppRequest } from './middleware/security.js';
 import authRoutes from './routes/auth.js';
 import projectRoutes from './routes/projects.js';
+import documentRoutes from './routes/documents.js';
 import conversationRoutes from './routes/conversations.js';
 import researchRoutes from './routes/research.js';
 import adminRoutes from './routes/admin.js';
@@ -130,6 +131,7 @@ export function createApp() {
   for (const prefix of ['/api/v1', '/api']) {
     app.use(prefix + '/auth', authRoutes);
     app.use(prefix + '/projects', projectRoutes);
+    app.use(prefix + '/documents', documentRoutes);
     app.use(prefix + '/conversations', conversationRoutes);
     app.use(prefix + '/research', researchRoutes);
     app.use(prefix + '/admin', adminRoutes);
