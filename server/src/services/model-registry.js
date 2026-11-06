@@ -184,7 +184,7 @@ function buildCatalog(privateProviders, configurationError) {
     tokenizer: model.tokenizer || 'auto',
     maxTokensParameter: model.maxTokensParameter || 'auto',
     tokenizerSource: model.tokenizer && model.tokenizer !== 'auto' && model.tokenizer !== 'none'
-      ? 'admin_configured'
+      ? (provider.source === 'admin_configured' ? 'admin_configured' : 'environment_configured')
       : (model.tokenizer === 'none' ? 'unknown' : 'automatic'),
   })));
 
