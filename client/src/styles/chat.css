@@ -55,3 +55,8 @@
 .chat-disclaimer { color: var(--subtle); font-size: 8px; text-align: center; margin-top: 9px; }
 .typing-indicator { display: flex; gap: 4px; padding: 9px 0; }.typing-indicator i { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); opacity: .5; animation: blink 1s infinite alternate; }.typing-indicator i:nth-child(2) { animation-delay: .2s; }.typing-indicator i:nth-child(3) { animation-delay: .4s; }
 @keyframes blink { to { transform: translateY(-4px); opacity: 1; } }
+
+.message-status { margin-top: 8px; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.message-status-failed { color: #b45b5b; }
+.message-status-cancelled { color: var(--muted); }
+:root[data-theme='dark'] .message-status-failed { color: #e5a0a0; }
