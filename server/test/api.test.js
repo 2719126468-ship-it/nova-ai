@@ -204,7 +204,7 @@ test('database migrations add message lifecycle fields and are idempotent', () =
   assert.ok(columns.has('status'));
   assert.ok(columns.has('error_code'));
   const versions = db.prepare('SELECT version FROM schema_migrations ORDER BY version').all();
-  assert.deepEqual(versions.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7]);
+  assert.deepEqual(versions.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8]);
   const versionColumns = new Set(db.prepare('PRAGMA table_info(message_versions)').all().map((column) => column.name));
   assert.ok(versionColumns.has('message_id'));
   assert.ok(versionColumns.has('content'));
@@ -236,6 +236,18 @@ test('database migrations add message lifecycle fields and are idempotent', () =
   const documentTriggers = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='documents'").all().map((row) => row.name));
   assert.ok(documentTriggers.has('documents_project_owner_insert'));
   assert.ok(documentTriggers.has('documents_project_owner_update'));
+  const projectColumns = new Set(db.prepare('PRAGMA table_info(projects)').all().map((column) => column.name));
+  assert.ok(projectColumns.has('instructions'));
+  assert.ok(projectColumns.has('instructions_version'));
+  const projectFileColumns = new Set(db.prepare('PRAGMA table_info(project_files)').all().map((column) => column.name));
+  assert.ok(projectFileColumns.has('project_id'));
+  assert.ok(projectFileColumns.has('user_id'));
+  assert.ok(projectFileColumns.has('content'));
+  assert.ok(projectFileColumns.has('extracted_text'));
+  assert.ok(projectFileColumns.has('include_in_context'));
+  const projectFileTriggers = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='project_files'").all().map((row) => row.name));
+  assert.ok(projectFileTriggers.has('project_files_owner_insert'));
+  assert.ok(projectFileTriggers.has('project_files_owner_update'));
 });
 
 test('versioned models endpoint does not claim an unconfigured model is connected', async () => {
