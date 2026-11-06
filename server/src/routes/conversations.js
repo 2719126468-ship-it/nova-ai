@@ -233,7 +233,27 @@ router.post('/:id/messages', generationLimiter, async (req, res, next) => {
     try {
       const prompt = buildPrompt(conversationId, parsed.data.content);
       if (!prompt) return res.status(413).json({ error: 'AI_INPUT_TOO_LARGE', message: '当前消息超过服务端配置的字符预算，请缩短后重试。' });
-      const reply = await createAssistantReply(prompt);
+      const controller = new AbortController();
+      let clientDisconnected = false;
+      const onClose = () => {
+        if (!res.writableEnded) {
+          clientDisconnected = true;
+          controller.abort();
+        }
+      };
+      res.once('close', onClose);
+
+      let reply;
+      try {
+        reply = await createAssistantReply(prompt, { signal: controller.signal });
+      } catch (error) {
+        if (clientDisconnected || controller.signal.aborted) return;
+        throw error;
+      } finally {
+        res.removeListener('close', onClose);
+      }
+      if (clientDisconnected || controller.signal.aborted || res.destroyed) return;
+
       const insert = db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)');
       const save = db.transaction(() => {
         const userResult = insert.run(conversationId, 'user', parsed.data.content);

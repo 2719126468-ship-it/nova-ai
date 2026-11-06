@@ -83,3 +83,12 @@
 
 
 账户数据生命周期复核（2026-11-06）：`GET /api/v1/auth/export` 只导出当前用户数据，不包含 password_hash、session token/hash、Provider API Key，并设置 Cache-Control: no-store。`DELETE /api/v1/auth/me` 需要当前密码和确认邮箱，用户与 session/project/conversation 相关数据依赖外键级联删除；Research articles 的 author_id 使用 ON DELETE SET NULL，公开文章内容保留。CI 已覆盖导出内容、凭据排除、错误确认阻止删除、成功删除及级联结果。生产备份保留策略和恢复后删除同步仍未定义。
+
+## 7. PR #4 选择性整合复核（2026-11-07）
+
+PR #4 基于较早的 main，不能整体合并。最新 main 已具有每用户 6 次/分钟的聊天限流、单用户单活动生成锁，以及 SSE 请求断连到上游 AbortSignal 的传播；PR 中的 20 次/15 分钟用户限额不是增强，不能覆盖现有更严格策略。
+
+本次仅移植尚缺失的 legacy JSON 非流式请求取消：响应连接在生成期间关闭时，服务端中止 Provider 请求；取消路径不落库，并在 finally 中释放活动生成锁。应由集成测试验证上游连接关闭、没有半截消息，以及后续请求可成功。
+
+PR #4 的 IP 限流暂缓。应用当前未配置可信反向代理跳数；若直接按 req.ip 限流，反向代理部署可能把所有访问者计为同一来源，造成误伤。部署时明确代理拓扑和 Express trust proxy 配置后，再启用 IP 维度限制。
+
