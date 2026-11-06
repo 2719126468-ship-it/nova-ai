@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowUpRight, Check, Clock3, FilePlus2, FileText, FolderOpen, LoaderCircle, RefreshCw, Save, Search, ShieldCheck, SplitSquareVertical } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, Check, Clock3, FilePlus2, FileText, FolderOpen, LoaderCircle, RefreshCw, Search, ShieldCheck, SplitSquareVertical, Trash2 } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -300,7 +300,7 @@ export function DocumentEditor() {
       </div>
       <div className="document-editor-actions">
         <Button variant="outline" onClick={saveAsCopy} disabled={copying || saving}><FilePlus2 size={14} /> 另存为副本</Button>
-        <button type="button" className="documents-icon-button danger" onClick={deleteDocument} aria-label="删除文档"><Trash2Icon /></button>
+        <button type="button" className="documents-icon-button danger" onClick={deleteDocument} aria-label="删除文档"><Trash2 size={15} /></button>
       </div>
     </div>
     <ErrorNotice>{error}</ErrorNotice>
@@ -347,6 +347,3 @@ export function DocumentEditor() {
   </main>;
 }
 
-function Trash2Icon() {
-  return <span aria-hidden="true">×</span>;
-}
