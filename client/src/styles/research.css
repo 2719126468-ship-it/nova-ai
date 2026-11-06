@@ -1,0 +1,43 @@
+/* research */
+.research-toolbar { display: flex; flex-direction: column; gap: 18px; margin-bottom: 28px; }
+.search-box { display: flex; align-items: center; gap: 11px; width: min(470px, 100%); padding: 0 14px; height: 45px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--muted); }
+.search-box input { flex: 1; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 11px; min-width: 0; }
+.filter-pills { display: flex; flex-wrap: wrap; gap: 7px; }
+.filter-pill { background: transparent; border: 1px solid var(--line); border-radius: 99px; color: var(--muted); padding: 7px 13px; font-size: 9px; }
+.filter-pill.active, .filter-pill:hover { color: var(--ink); border-color: var(--ink); background: var(--surface); }
+.research-list { border-top: 1px solid var(--line-strong); }
+.research-row { display: grid; grid-template-columns: 68px 1fr 50px; align-items: center; gap: 22px; padding: 30px 6px; border-bottom: 1px solid var(--line); transition: background .2s, padding .2s; }
+.research-row:hover { background: var(--surface); padding-left: 16px; padding-right: 16px; }
+.research-number { color: var(--subtle); font-family: 'Manrope'; font-size: 12px; }
+.research-meta { display: flex; gap: 17px; align-items: center; color: var(--subtle); font-size: 8px; letter-spacing: 1.1px; text-transform: uppercase; }
+.research-meta span:first-child { color: var(--accent-dark); font-weight: 700; }
+.research-row-main h2 { font-family: 'Manrope', 'Noto Sans SC'; font-weight: 550; font-size: clamp(19px, 2.3vw, 27px); letter-spacing: -.9px; margin: 12px 0 7px; }
+.research-row-main p { color: var(--muted); font-size: 11px; line-height: 1.8; margin: 0; }
+.research-arrow { display: grid; place-items: center; width: 39px; height: 39px; border-radius: 50%; border: 1px solid var(--line); color: var(--muted); transition: background .2s, color .2s; }
+.research-row:hover .research-arrow { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.research-note { display: flex; align-items: flex-start; gap: 28px; border-top: 1px solid var(--line); padding-top: 23px; margin-top: 43px; }
+.research-note .eyebrow { flex-shrink: 0; padding-top: 4px; }
+.research-note p { color: var(--muted); max-width: 650px; font-size: 10px; line-height: 1.9; margin: 0; }
+.article-page { max-width: 900px; padding-top: 55px; padding-bottom: 60px; }
+.back-link { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; margin-bottom: 55px; }
+.back-link:hover { color: var(--ink); }
+.article-header { max-width: 780px; }
+.article-header h1 { font-family: 'Manrope', 'Noto Sans SC'; font-size: clamp(38px, 5.3vw, 62px); line-height: 1.2; letter-spacing: -2.9px; font-weight: 600; margin: 22px 0 18px; }
+.article-header > p { color: var(--muted); font-size: 15px; line-height: 1.9; margin: 0; }
+.article-byline { display: flex; gap: 23px; margin-top: 35px; color: var(--subtle); font-size: 8px; letter-spacing: 1.1px; }
+.article-divider { border-top: 1px solid var(--line); margin: 39px 0 43px; }
+.markdown-body { max-width: 700px; font-size: 14px; line-height: 2.1; color: var(--ink); overflow-wrap: anywhere; }
+.markdown-body p { margin: 0 0 23px; }
+.markdown-body h1, .markdown-body h2, .markdown-body h3 { font-family: 'Manrope', 'Noto Sans SC'; letter-spacing: -.9px; margin: 36px 0 14px; }
+.markdown-body h2 { font-size: 25px; }.markdown-body h3 { font-size: 19px; }
+.markdown-body ul, .markdown-body ol { padding-left: 23px; margin-bottom: 22px; }
+.markdown-body li { padding-left: 4px; margin: 5px 0; }
+.markdown-body blockquote { margin: 25px 0; border-left: 2px solid var(--accent); padding: 4px 0 4px 19px; color: var(--muted); }
+.markdown-body code { background: var(--surface-soft); padding: 2px 5px; border-radius: 3px; font-family: ui-monospace, monospace; font-size: .9em; }
+.markdown-body pre { background: #1a1b21; color: #efeff2; padding: 18px; overflow: auto; border-radius: 4px; line-height: 1.7; }
+.markdown-body pre code { background: transparent; padding: 0; }
+.markdown-body a { text-decoration: underline; text-underline-offset: 3px; }
+.markdown-body table { border-collapse: collapse; width: 100%; font-size: 12px; }
+.markdown-body th, .markdown-body td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; }
+.article-end { border-top: 1px solid var(--line); padding-top: 22px; display: flex; justify-content: space-between; align-items: center; margin-top: 60px; color: var(--subtle); font-size: 8px; letter-spacing: 1.3px; }
+.article-end a { display: flex; align-items: center; gap: 7px; color: var(--ink); font-size: 10px; letter-spacing: 0; }

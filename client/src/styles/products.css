@@ -1,0 +1,3 @@
+/* products */
+.products-grid { grid-template-columns: repeat(4, 1fr); }
+.products-grid .feature-card { min-height: 280px; }

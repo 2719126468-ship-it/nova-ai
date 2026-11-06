@@ -1,0 +1,15 @@
+/* NOVA styles are split by concern; order preserves the original cascade. */
+@import './foundation.css';
+@import './shared.css';
+@import './home.css';
+@import './products.css';
+@import './research.css';
+@import './auth.css';
+@import './chat.css';
+@import './studio.css';
+@import './account.css';
+@import './models-pricing.css';
+@import './developers.css';
+@import './admin.css';
+@import './about.css';
+@import './responsive.css';

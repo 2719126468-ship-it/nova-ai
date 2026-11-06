@@ -1,0 +1,27 @@
+/* auth */
+.auth-layout { display: grid; grid-template-columns: minmax(340px, .92fr) 1.08fr; min-height: calc(100vh - 76px); background: var(--surface); }
+.auth-aside { position: relative; overflow: hidden; min-height: 680px; background: #17181e; color: #fff; padding: 47px 7vw; display: flex; flex-direction: column; }
+.auth-aside .brand-mark { position: relative; z-index: 2; }
+.auth-aside-art { position: absolute; width: 500px; height: 500px; border-radius: 50%; border: 1px solid rgba(180,171,255,.22); top: 24%; right: -20%; display: grid; place-items: center; }
+.auth-ring { position: absolute; border-radius: 50%; border: 1px solid rgba(180,171,255,.18); }
+.ring-a { inset: 53px; transform: rotate(28deg) scaleX(.75); }.ring-b { inset: 110px; border-style: dashed; transform: rotate(-32deg) scaleY(.7); }
+.auth-symbol { font-size: 130px; color: #a99cff; text-shadow: 0 0 65px rgba(169,156,255,.45); animation: float 7s ease-in-out infinite; }
+.auth-aside-copy { position: relative; z-index: 1; margin-top: auto; margin-bottom: 80px; }
+.auth-aside-copy > span { color: #9d9eaa; font-size: 8px; letter-spacing: 2px; }
+.auth-aside-copy h2 { font-family: 'Manrope', 'Noto Sans SC'; font-size: 45px; font-weight: 550; line-height: 1.28; letter-spacing: -2px; margin: 19px 0 0; }
+.auth-aside-copy em { font-style: normal; color: #b3aaff; }
+.auth-aside-footer { position: absolute; bottom: 26px; left: 7vw; color: #747682; font-size: 8px; letter-spacing: 1.5px; }
+.auth-main { display: flex; flex-direction: column; padding: 40px 7vw; }
+.auth-back { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
+.auth-form-wrap { width: min(390px, 100%); margin: auto; padding: 50px 0; }
+.auth-icon { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--accent-dark); margin-bottom: 25px; }
+.auth-overline { color: var(--muted); font-size: 8px; letter-spacing: 1.8px; font-weight: 700; }
+.auth-form-wrap h1 { font-family: 'Manrope', 'Noto Sans SC'; font-size: 36px; font-weight: 600; letter-spacing: -1.6px; margin: 12px 0 7px; }
+.auth-subtitle { color: var(--muted); font-size: 12px; margin: 0 0 30px; }
+.form-stack { display: flex; flex-direction: column; gap: 18px; }
+.password-field { display: flex; align-items: center; border: 1px solid var(--line-strong); background: var(--surface); padding-right: 11px; }
+.password-field input { border: 0 !important; }.password-field button { background: transparent; border: 0; color: var(--muted); display: grid; place-items: center; }
+.auth-submit { width: 100%; margin-top: 5px; }
+.auth-switch { text-align: center; color: var(--muted); font-size: 11px; margin-top: 25px; }
+.auth-switch button { color: var(--accent-dark); font-weight: 700; border: 0; background: transparent; font-size: inherit; }
+.auth-legal { color: var(--subtle); font-size: 9px; line-height: 1.7; text-align: center; margin-top: 37px; }

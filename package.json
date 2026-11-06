@@ -1,0 +1,26 @@
+{
+  "name": "nova-ai-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A full-stack AI product platform starter with an extensible provider adapter.",
+  "type": "module",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "npm run dev -w server",
+    "dev:client": "npm run dev -w client",
+    "build": "npm run build -w client",
+    "test": "npm run test -w server",
+    "start": "npm run start -w server",
+    "admin:promote": "npm run admin:promote -w server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

@@ -1,0 +1,28 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const defaultDb = path.resolve(here, '../data/nova.sqlite');
+
+export const config = {
+  nodeEnv: process.env.NODE_ENV || 'development',
+  port: Number(process.env.PORT || 4000),
+  webOrigins: (process.env.WEB_ORIGIN || 'http://localhost:5173').split(',').map((origin) => origin.trim()).filter(Boolean),
+  sessionSecret: process.env.SESSION_SECRET || '',
+  dbPath: process.env.DB_PATH ? path.resolve(process.cwd(), process.env.DB_PATH) : defaultDb,
+  aiBaseUrl: (process.env.AI_BASE_URL || '').replace(/\/+$/, ''),
+  aiApiKey: process.env.AI_API_KEY || '',
+  aiModel: process.env.AI_MODEL || '',
+  aiTimeoutMs: Number(process.env.AI_TIMEOUT_MS || 60000),
+  sessionDays: 7,
+  get aiConfigured() { return Boolean(this.aiBaseUrl && this.aiApiKey && this.aiModel); },
+};
+
+export function assertConfig() {
+  if (config.sessionSecret.length < 32) {
+    throw new Error('SESSION_SECRET must contain at least 32 characters. Copy .env.example and set a strong random value.');
+  }
+  if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) {
+    throw new Error('PORT must be a valid TCP port.');
+  }
+}
