@@ -7,7 +7,7 @@
 
 ## Progress
 
-**1 / 12 complete** · 0 in progress · 11 planned
+**1 / 12 complete** · 2 in progress · 9 planned
 
 The existing V0.1 implementation is the foundation. Do not rebuild or replace working authentication, chat, SSE, model routing, Studio, account, or data-lifecycle flows. Extend them incrementally.
 
@@ -16,8 +16,8 @@ The existing V0.1 implementation is the foundation. Do not rebuild or replace wo
 | ID | Priority | Task | Status | Completion criteria |
 |---|---|---|---|---|
 | B1-01 | P0 | Review PR #4 against current main and selectively integrate valid changes | **Complete** | Old PR was not merged directly. The non-streaming disconnect cancellation was ported to current main in PR #5; regression test and CI passed. Existing 6/min per-user limiter and single-generation guard were retained. |
-| B1-02 | P0 | Review and consolidate Provider error handling | Planned | Normalize HTTP, timeout, malformed-stream, empty-response, cancellation, and quota errors. Keep secrets and upstream private details out of client responses and logs; tests cover each category. |
-| B1-03 | P0 | Design and implement persistent Usage records | Planned | Persist request ID, user, provider/model, status, duration, and actual upstream usage when supplied. Unknown token/cost values must remain unknown, not be guessed. |
+| B1-02 | P0 | Review and consolidate Provider error handling | In progress | Normalize HTTP, timeout, malformed-stream, empty-response, cancellation, and quota errors. Keep secrets and upstream private details out of client responses and logs; tests cover each category. |
+| B1-03 | P0 | Design and implement persistent Usage records | In progress | Persist request ID, user, provider/model, status, duration, and actual upstream usage when supplied. Unknown token/cost values must remain unknown, not be guessed. |
 | B1-04 | P1 | Add code syntax highlighting and code-block copy | Planned | Common languages render correctly; copy action copies only code content; mobile layout remains usable. |
 | B1-05 | P1 | Add assistant answer version history and undo | Planned | Replaced answers remain recoverable; users can inspect and restore a prior answer without corrupting conversation order or context. |
 
@@ -77,3 +77,12 @@ Documents comes before project context/file management, and Research follows tho
 - CI passed on PR #5 (run 36) and again after merge on main (run 37).
 - Merged as `f4d48025919a98f797fee3cd5d9460535899cd09`. Closed PR #4 as superseded, not merged.
 - Deferred IP-based limiting until trusted reverse-proxy handling is explicitly configured.
+
+## 2026-11-07 — B1-02 / B1-03 implementation in progress
+
+- Provider errors are now normalized into distinct codes for credential/permission rejection, request rejection, upstream rate limiting, upstream outage, network failure, timeout, malformed JSON, malformed SSE, provider stream errors, empty completions, and client cancellation.
+- The Provider adapter reads token usage only when it is explicitly returned by the upstream response or stream event; it does not treat character counts as tokens.
+- Added migration v3 for `ai_usage`, with request ID, user/provider/model, operation, status, error category, duration, provider-reported token counts, and timestamps. No prompts, response text, API keys, or base URLs are stored.
+- All four generation paths now create and finalize usage records: JSON chat, SSE chat, edit/regenerate, and failed-response retry.
+- Account data export includes owned usage records; account deletion cascades them. Administrator-only `GET /api/v1/admin/usage` returns aggregate and recent records.
+- Added tests for Provider error redaction/classification, schema migration, streaming usage metadata, export/deletion lifecycle, and admin authorization. Do not mark these tasks complete until branch CI passes.
