@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, ArrowUpRight, Check, Copy, FileText, FolderOpen, LoaderCircle, RefreshCw, ShieldCheck, Upload, X } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, json } from '../lib/api';
+import { API_URL, api, json } from '../lib/api';
 import { Button, EmptyState, ErrorNotice, Loading, PageIntro } from '../components/UI';
 
 function formatBytes(value) {
@@ -129,9 +129,9 @@ export function ProjectContextEditor() {
     setNotice('');
     setSelectedFileName(file.name);
     try {
-      const response = await fetch('/api/v1/projects/' + id + '/files', {
+      const response = await fetch(API_URL + '/api/v1/projects/' + id + '/files', {
         method: 'POST',
-        credentials: 'same-origin',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/octet-stream',
           'X-Requested-With': 'NOVA-Web',
