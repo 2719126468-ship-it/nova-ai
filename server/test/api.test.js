@@ -143,9 +143,9 @@ test('project context instructions and files enforce owner isolation, versioning
 
   const contextConversation = await owner.post('/api/v1/conversations').set(originHeaders)
     .send({ title: 'Project context integration' }).expect(201);
-  db.prepare('INSERT INTO project_conversations(project_id,conversation_id) VALUES(?,?)')
-    .run(projectId, contextConversation.body.conversation.id);
   const ownerId = db.prepare('SELECT id FROM users WHERE email=?').get('project-files-owner@example.com').id;
+  db.prepare('INSERT INTO project_conversations(project_id,conversation_id,user_id) VALUES(?,?,?)')
+    .run(projectId, contextConversation.body.conversation.id, ownerId);
   const { readProjectPromptContext } = await import('../src/routes/conversations.js');
   const includedContext = readProjectPromptContext(contextConversation.body.conversation.id, ownerId);
   const otherId = db.prepare('SELECT id FROM users WHERE email=?').get('project-files-other@example.com').id;
