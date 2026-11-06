@@ -14,6 +14,7 @@ const modelSchema = z.object({
   capabilities: z.array(z.string().trim().min(1).max(40)).max(20).optional().default(['chat', 'text']),
   contextLimit: z.number().int().positive().max(10000000).nullable().optional().default(null),
   tokenizer: z.enum(['auto', 'cl100k_base', 'o200k_base', 'none']).optional().default('auto'),
+  maxTokensParameter: z.enum(['auto', 'max_tokens', 'max_completion_tokens', 'none']).optional().default('auto'),
 });
 
 function addUniqueModelIds(models, ctx) {
@@ -66,6 +67,7 @@ function normalizeStoredModels(models) {
     capabilities: [...new Set(model.capabilities || ['chat', 'text'])],
     contextLimit: model.contextLimit ?? null,
     tokenizer: model.tokenizer || 'auto',
+    maxTokensParameter: model.maxTokensParameter || 'auto',
   }));
 }
 
