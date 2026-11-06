@@ -420,6 +420,9 @@ test('upstream authentication, rate-limit, server, and empty-stream failures are
       } else if (prompt.includes('provider-503')) {
         outgoing.writeHead(503, { 'Content-Type': 'application/json' });
         outgoing.end(JSON.stringify({ error: 'private upstream detail' }));
+      } else if (prompt.includes('provider-malformed')) {
+        outgoing.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        outgoing.end('data: {not valid json}\n\n');
       } else {
         outgoing.writeHead(200, { 'Content-Type': 'text/event-stream' });
         outgoing.end('data: [DONE]\n\n');
