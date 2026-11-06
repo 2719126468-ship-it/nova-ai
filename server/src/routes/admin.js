@@ -208,7 +208,8 @@ router.post('/providers', (req, res, next) => {
       return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Provider 信息无效，请检查地址、密钥和模型列表。', details: z.flattenError(parsed.error) });
     }
     const input = parsed.data;
-    if (getModelRegistry().providers.some((provider) => provider.id === input.id)) {
+    if (db.prepare('SELECT id FROM ai_providers WHERE id=?').get(input.id)
+      || getModelRegistry().providers.some((provider) => provider.id === input.id)) {
       return res.status(409).json({ error: 'PROVIDER_ID_RESERVED', message: '该 Provider ID 已由环境配置或数据库占用。' });
     }
 
@@ -234,6 +235,9 @@ router.put('/providers/:id', (req, res, next) => {
     const id = providerIdSchema.safeParse(req.params.id);
     if (!id.success) return res.status(400).json({ error: 'INVALID_ID', message: 'Provider ID 无效。' });
 
+    if (!config.providerEncryptionKey) {
+      return res.status(503).json({ error: 'PROVIDER_ENCRYPTION_NOT_CONFIGURED', message: '请先在服务器配置 PROVIDER_ENCRYPTION_KEY。' });
+    }
     const current = db.prepare('SELECT * FROM ai_providers WHERE id=?').get(id.data);
     if (!current) return res.status(404).json({ error: 'PROVIDER_NOT_FOUND', message: '找不到可管理的 Provider。' });
     const input = parsed.data;
@@ -272,7 +276,7 @@ router.delete('/providers/:id', (req, res) => {
   res.json(providerManagementState());
 });
 
-router.put('/providers/default-model', (req, res) => {
+router.put('/model-default', (req, res) => {
   const parsed = z.object({
     defaultModelId: z.string().trim().min(1).max(300).nullable(),
   }).safeParse(req.body);
