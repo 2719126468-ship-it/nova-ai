@@ -42,7 +42,7 @@ Remaining model-system follow-ups: automatic model discovery, controlled failove
 | ID | Priority | Task | Status | Completion criteria |
 |---|---|---|---|---|
 | B3-01 | P0 | Documents data model and API | **Complete** | Migration v7 adds user-owned Markdown documents with project association, ownership triggers, bounded content and versions; authenticated CRUD/list/search API, optimistic concurrency, account export/deletion lifecycle and regression tests; PR #11 CI run #71 passed API tests and production build; merged as 4866e8e. |
-| B3-02 | P0 | Documents editor and autosave | **In progress** | Create/edit Markdown documents, autosave safely, show save/error state, and export content. |
+| B3-02 | P0 | Documents editor and autosave | **In progress** | Added a protected Documents library and mobile-first editor, Markdown preview, project association, 850 ms debounced autosave with version checks, save/error/conflict states, reload-latest and save-as-copy recovery, and .md download. Await full branch CI before marking complete. |
 | B3-03 | P1 | Project context and file management | Planned | Add project instructions and organized project materials; implement upload only with file type/signature, size, isolation, retention, and parsing controls. |
 | B3-04 | P1 | Real Research search and citations | Planned | Use a real search provider, preserve source URLs/metadata, distinguish retrieved facts from model synthesis, and produce cited reports. |
 
@@ -106,6 +106,14 @@ Documents comes before project context/file management, and Research follows tho
 - Migration v7 adds private Markdown documents with owner/project constraints, version numbers, and indexes. API list/create/read/update/delete is owner-scoped; stale updates return 409 and require the caller's expected version.
 - Project deletion detaches documents rather than deleting them; account deletion cascades documents; account export schema v5 includes full document content.
 - B3-02 is now in progress: build the mobile-first Documents list/editor and reliable autosave over the versioned API. Preserve unsaved local text on conflicts and expose actionable save state.
+
+## 2026-11-07 — B3-02 editor implementation in progress
+
+- Added protected `/documents` and `/documents/:id` routes and a logged-in Documents navigation entry.
+- Added a private document library with title search, recent ordering, create and refresh actions.
+- Added a mobile-first Markdown editor with edit/preview modes, project association, character limit, save status, and Markdown download.
+- Autosave debounces edits by 850 ms and sends the document's current `expectedVersion`; transient failures wait for an explicit retry or a new edit rather than retrying forever.
+- A 409 version conflict preserves the local editor state and offers reload-latest or save-as-copy recovery. B3-02 remains in progress until CI and interaction checks pass.
 
 ## Completed work log
 

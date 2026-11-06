@@ -11,6 +11,8 @@ const Auth = lazy(() => import('./pages/Auth'));
 const Chat = lazy(() => import('./pages/Chat'));
 const Studio = lazy(() => import('./pages/Studio').then((module) => ({ default: module.Studio })));
 const StudioEditor = lazy(() => import('./pages/Studio').then((module) => ({ default: module.StudioEditor })));
+const Documents = lazy(() => import('./pages/Documents').then((module) => ({ default: module.Documents })));
+const DocumentEditor = lazy(() => import('./pages/Documents').then((module) => ({ default: module.DocumentEditor })));
 const Account = lazy(() => import('./pages/Account'));
 const Models = lazy(() => import('./pages/Models'));
 const Pricing = lazy(() => import('./pages/Pricing'));
@@ -42,6 +44,8 @@ export default function App() {
             <Route path="chat" element={<Chat />} />
             <Route path="studio" element={<Studio />} />
             <Route path="studio/:id" element={<StudioEditor />} />
+            <Route path="documents" element={<Documents />} />
+            <Route path="documents/:id" element={<DocumentEditor />} />
             <Route path="account" element={<Account />} />
           </Route>
           <Route element={<AdminRoute />}>
