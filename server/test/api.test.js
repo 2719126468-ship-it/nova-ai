@@ -1236,3 +1236,89 @@ test('multi-provider model registry keeps API keys private and routes the select
     secondProviderServer = null;
   }
 });
+
+
+test('account export includes owned work but excludes password and session credentials', async () => {
+  const agent = request.agent(app);
+  await agent.post('/api/v1/auth/register').set(originHeaders).send({
+    email: 'account-export@example.com',
+    name: 'Account Export Tester',
+    password: 'account-export-password-strong',
+  }).expect(201);
+  const project = await agent.post('/api/v1/projects').set(originHeaders)
+    .send({ title: 'Export project', description: 'private description', content: 'project notes' }).expect(201);
+  const conversation = await agent.post('/api/v1/conversations').set(originHeaders)
+    .send({ title: 'Export conversation' }).expect(201);
+  db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)')
+    .run(conversation.body.conversation.id, 'user', 'My private chat message');
+  await agent.post('/api/v1/projects/' + project.body.project.id + '/conversations')
+    .set(originHeaders).send({ conversationId: conversation.body.conversation.id }).expect(201);
+
+  const user = db.prepare('SELECT id FROM users WHERE email=?').get('account-export@example.com');
+  db.prepare('INSERT INTO articles(slug,title,body,author_id) VALUES(?,?,?,?)')
+    .run('account-export-article', 'My authored article', 'Research content', user.id);
+
+  const response = await agent.get('/api/v1/auth/export').expect(200);
+  assert.equal(response.headers['cache-control'], 'no-store');
+  assert.equal(response.body.account.email, 'account-export@example.com');
+  assert.equal(response.body.projects.length, 1);
+  assert.equal(response.body.projects[0].content, 'project notes');
+  assert.equal(response.body.conversations.length, 1);
+  assert.equal(response.body.messages[0].content, 'My private chat message');
+  assert.equal(response.body.projectConversationLinks.length, 1);
+  assert.equal(response.body.authoredArticles[0].slug, 'account-export-article');
+
+  const serialized = JSON.stringify(response.body);
+  assert.equal(serialized.includes('password_hash'), false);
+  assert.equal(serialized.includes('token_hash'), false);
+  assert.equal(serialized.includes('nova_session='), false);
+  assert.equal(serialized.includes('SESSION_SECRET'), false);
+  assert.equal(serialized.includes('AI_API_KEY'), false);
+  assert.ok(response.body.excluded.includes('password hashes'));
+});
+
+test('account deletion requires password and email confirmation then cascades private data', async () => {
+  const agent = request.agent(app);
+  await agent.post('/api/v1/auth/register').set(originHeaders).send({
+    email: 'account-delete@example.com',
+    name: 'Account Delete Tester',
+    password: 'account-delete-password-strong',
+  }).expect(201);
+  const project = await agent.post('/api/v1/projects').set(originHeaders)
+    .send({ title: 'Delete project', description: '', content: 'delete me' }).expect(201);
+  const conversation = await agent.post('/api/v1/conversations').set(originHeaders)
+    .send({ title: 'Delete conversation' }).expect(201);
+  const user = db.prepare('SELECT id FROM users WHERE email=?').get('account-delete@example.com');
+  const projectId = project.body.project.id;
+  const conversationId = conversation.body.conversation.id;
+  db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)')
+    .run(conversationId, 'user', 'delete this message');
+  await agent.post('/api/v1/projects/' + projectId + '/conversations')
+    .set(originHeaders).send({ conversationId }).expect(201);
+  db.prepare('INSERT INTO articles(slug,title,body,author_id) VALUES(?,?,?,?)')
+    .run('account-delete-article', 'Published article', 'Site content remains', user.id);
+
+  await agent.delete('/api/v1/auth/me').set(originHeaders)
+    .send({ currentPassword: 'wrong-password', confirmEmail: 'account-delete@example.com' })
+    .expect(400);
+  await agent.delete('/api/v1/auth/me').set(originHeaders)
+    .send({ currentPassword: 'account-delete-password-strong', confirmEmail: 'wrong@example.com' })
+    .expect(400);
+  assert.ok(db.prepare('SELECT id FROM users WHERE id=?').get(user.id));
+
+  const removed = await agent.delete('/api/v1/auth/me').set(originHeaders)
+    .send({ currentPassword: 'account-delete-password-strong', confirmEmail: 'account-delete@example.com' })
+    .expect(200);
+  assert.equal(removed.body.success, true);
+  assert.ok(removed.headers['set-cookie']?.some((cookie) => cookie.includes('nova_session=;')));
+  await agent.get('/api/v1/auth/me').expect(401);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM users WHERE id=?').get(user.id).count, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id=?').get(user.id).count, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM projects WHERE user_id=?').get(user.id).count, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM conversations WHERE user_id=?').get(user.id).count, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM messages WHERE conversation_id=?').get(conversationId).count, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM project_conversations WHERE user_id=?').get(user.id).count, 0);
+  const retainedArticle = db.prepare('SELECT author_id,body FROM articles WHERE slug=?').get('account-delete-article');
+  assert.equal(retainedArticle.author_id, null);
+  assert.equal(retainedArticle.body, 'Site content remains');
+});

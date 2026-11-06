@@ -30,7 +30,7 @@
 | SEC-03 | Provider 错误与耗时不可观测 | 中 | 当前只有通用错误响应与服务端 console；无结构化 requestId/usage_logs | 增加最小化日志、requestId、provider/model、错误类别和耗时；不记录 API Key/不必要提示词 |
 | SEC-04 | 无数据库迁移和恢复演练 | 高（公开生产前） | db.js 直接 CREATE TABLE；没有版本化迁移/恢复步骤执行证据 | migrations、定期备份、恢复演练、升级测试 |
 | SEC-05 | CSP 被关闭 | 中 | Helmet 使用 contentSecurityPolicy:false | 在生产构建确认资源来源后增加 CSP；避免为方便而永久关闭 |
-| SEC-06 | 缺少账户删除/数据导出 | 中（隐私发布前） | auth 路由无账户删除/导出接口 | 明确数据保留政策，提供账户数据导出和可验证删除流程 |
+| SEC-06 | 账户删除/导出已实现；备份留存策略待定义 | 中（隐私发布前） | 已有 JSON 导出、密码+邮箱双重确认删除、级联清理和作者关联匿名化；备份副本的删除/留存 SLA 尚未定义 | 在部署策略中说明备份保留窗口、恢复后删除同步和用户数据清除时限；定期执行导出/删除演练 |
 | SEC-07 | 第三方模型数据告知不足 | 高（连接外部模型并公开前） | 当前 Chat UI 有一般性错误/核验提示，但缺少清晰告知提示词/文件将发送到第三方模型服务 | 在首个模型调用前说明目的、第三方处理、保留/训练条款链接和用户控制方式 |
 | SEC-08 | CSRF 方案仅为来源和请求头校验 | 中 | Origin 缺失时仍允许继续；X-Requested-With 是浏览器请求特征，不是秘密 token | 同源部署优先；生产浏览器请求要求受信任 Origin；评估 CSRF Token/双重 Cookie；增加跨站测试 |
 | SEC-09 | Session 过期记录未见清理任务 | 低/中 | 每次认证会检查 expires_at，但没有定期清理过期 sessions 的代码 | 登录时轻量清理或维护任务；确认索引和清理性能 |
@@ -80,3 +80,6 @@
 
 
 按需 Provider 连接检查已新增：仅允许已登录用户使用，每用户每分钟最多 5 次；服务端使用对应私密 Key 读取 Provider `/models`，只在模型 ID 得到目录确认时标记 healthy；不支持该端点或不能确认时保持 unknown。此检查不生成模型回答、不发送用户提示词、不持久化长期健康状态。真实部署仍需验证上游各家 `/models` 兼容性和反向代理超时行为。
+
+
+账户数据生命周期复核（2026-11-06）：`GET /api/v1/auth/export` 只导出当前用户数据，不包含 password_hash、session token/hash、Provider API Key，并设置 Cache-Control: no-store。`DELETE /api/v1/auth/me` 需要当前密码和确认邮箱，用户与 session/project/conversation 相关数据依赖外键级联删除；Research articles 的 author_id 使用 ON DELETE SET NULL，公开文章内容保留。CI 已覆盖导出内容、凭据排除、错误确认阻止删除、成功删除及级联结果。生产备份保留策略和恢复后删除同步仍未定义。

@@ -78,3 +78,6 @@ Projects delivery update (2026-11-06): project-conversation migration v2, owner-
 
 
 Model registry progress: `AI_PROVIDERS_JSON` now registers multiple OpenAI-compatible providers and models; `AI_DEFAULT_MODEL` selects the default, and the Chat selector sends its public model ID to a server-side resolver. Keys/base URLs stay server-side. CI test coverage has reached 24/24 API tests and verifies routing through two separate mock providers without exposing either key. Health remains `unknown` until an explicit health probe is implemented; browser-login/OAuth provider integrations are future work.
+
+
+Account data controls: the Account page now offers JSON export and password+email confirmed account deletion. API integration tests cover export scope, credential omission, cascaded removal of personal project/chat/session records, and anonymization of author IDs for retained public Research articles. Backup retention and deletion propagation after restore remain deployment-policy work.

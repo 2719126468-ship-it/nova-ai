@@ -115,3 +115,10 @@
 - 依赖：Zod 升级至 4.6.7；最新验证 CI 的 npm ci 审计为 0 vulnerabilities。
 
 最近一轮已完成的 CI 为 24/24 API tests、Vite production build success。仍未满足 V0.1 完成/公开发布的项目包括：主动 Provider 健康探测、管理员 Provider/Model 配置 UI、准确 usage 日志和管理员统计、403/畸形流等故障覆盖、精确 Token/contextLimit 预算、回答版本历史/撤销、账户数据导出/删除、第三方模型数据告知、严格 CSRF/Origin 策略、真机/Playwright E2E、备份恢复演练。OAuth/浏览器登录型 Provider（例如需要网页登录态的模型平台）不是当前 OpenAI-compatible JSON 注册表已经支持的能力，仍需独立适配。
+
+
+## 账户数据生命周期增量（2026-11-06）
+
+账户 API 已增加 GET /api/v1/auth/export 与 DELETE /api/v1/auth/me。导出包含当前用户资料、项目、项目关联、对话、消息和本人创建的 Research 文章；不会包含 password_hash、session token/hash 或 Provider API Key，并设置 Cache-Control: no-store。删除账户要求当前密码与邮箱二次确认，成功后清除会话 cookie；SQLite 外键级联移除个人项目、对话、消息、项目关联和登录会话。已发布 Research 文章作为站点内容保留，author_id 在删除后设为 NULL。
+
+该能力已添加集成测试：导出内容范围和凭据排除；错误密码/邮箱不得删除；成功删除后级联行均清零且 CMS 作者关联解除。备份副本的保留窗口、恢复后删除同步和用户删除 SLA 仍需部署前制定。

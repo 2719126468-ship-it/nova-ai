@@ -48,6 +48,19 @@ Malformed AI_PROVIDERS_JSON disables the multi-provider registry and reports AI_
 
 The server applies a configurable character budget to message content before sending a prompt upstream. Configure it with `AI_MAX_CONTEXT_CHARS` (default `40000`, allowed range `512`–`200000`). This is a JavaScript string-length budget, **not a token count**. The API reports `contextPolicy.tokenLimit: null` because provider/model token windows are not currently verified. NOVA keeps the newest complete turns that fit and always preserves the current user message. A failed/cancelled turn's unmatched trailing user message is not replayed as conversation history. If the current message alone exceeds the configured budget, the API returns HTTP 413 `AI_INPUT_TOO_LARGE` before calling the provider.
 
+## Account data
+
+These endpoints require an authenticated session.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | /api/v1/auth/export | Download the current user's account and workspace data as JSON |
+| DELETE | /api/v1/auth/me | Delete the current account after password and email confirmation |
+
+The export contains profile metadata, projects, conversations, messages, project/conversation links, and articles authored by the account. It deliberately excludes password hashes, session tokens/hashes, and Provider API keys. The response uses Cache-Control: no-store.
+
+Deletion requires both the current password and the exact account email. It removes the user, active sessions, projects, conversations, messages and project links through SQLite foreign-key cascades. Published Research CMS content is retained as site content and its author_id is set to null; this is explained before submission in the Account UI.
+
 ## Projects
 
 All project endpoints require an authenticated session and scope data to the current user.

@@ -68,6 +68,95 @@ router.post('/logout', requireAuth, (req, res) => {
 
 router.get('/me', requireAuth, (req, res) => res.json({ user: req.user }));
 
+router.get('/export', requireAuth, (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const account = db.prepare(
+      'SELECT id,email,name,role,created_at,updated_at FROM users WHERE id=?',
+    ).get(userId);
+    if (!account) return res.status(404).json({ error: 'NOT_FOUND', message: '账户不存在。' });
+
+    const projects = db.prepare(
+      'SELECT id,title,description,content,created_at,updated_at FROM projects WHERE user_id=? ORDER BY id',
+    ).all(userId);
+    const conversations = db.prepare(
+      'SELECT id,title,created_at,updated_at FROM conversations WHERE user_id=? ORDER BY id',
+    ).all(userId);
+    const messages = db.prepare(`
+      SELECT m.id,m.conversation_id,m.role,m.content,m.status,m.error_code,m.created_at
+      FROM messages m JOIN conversations c ON c.id=m.conversation_id
+      WHERE c.user_id=? ORDER BY m.conversation_id,m.id
+    `).all(userId);
+    const projectConversationLinks = db.prepare(`
+      SELECT pc.project_id,pc.conversation_id,pc.created_at
+      FROM project_conversations pc JOIN projects p ON p.id=pc.project_id
+      WHERE p.user_id=? AND pc.user_id=? ORDER BY pc.project_id,pc.conversation_id
+    `).all(userId, userId);
+    const authoredArticles = db.prepare(`
+      SELECT id,slug,title,category,summary,body,status,published_at,created_at,updated_at
+      FROM articles WHERE author_id=? ORDER BY id
+    `).all(userId);
+
+    res.set({
+      'Cache-Control': 'no-store',
+      Pragma: 'no-cache',
+      'Content-Disposition': 'attachment; filename="nova-account-export-' + userId + '.json"',
+    });
+    res.json({
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      account,
+      projects,
+      conversations,
+      messages,
+      projectConversationLinks,
+      authoredArticles,
+      excluded: ['password hashes', 'session tokens and hashes', 'provider API keys'],
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/me', requireAuth, async (req, res, next) => {
+  try {
+    const parsed = z.object({
+      currentPassword: z.string().min(1).max(72),
+      confirmEmail: z.string().trim().email().max(254),
+    }).safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'VALIDATION_ERROR', message: '请提供当前密码，并输入完整账户邮箱确认删除。' });
+    }
+    const account = db.prepare('SELECT id,email,password_hash FROM users WHERE id=?').get(req.user.id);
+    if (!account) return res.status(404).json({ error: 'NOT_FOUND', message: '账户不存在。' });
+    if (parsed.data.confirmEmail.toLowerCase() !== account.email.toLowerCase()) {
+      return res.status(400).json({ error: 'EMAIL_CONFIRMATION_MISMATCH', message: '确认邮箱与当前账户邮箱不一致。' });
+    }
+    if (!(await bcrypt.compare(parsed.data.currentPassword, account.password_hash))) {
+      return res.status(400).json({ error: 'PASSWORD_MISMATCH', message: '当前密码不正确，账户未删除。' });
+    }
+
+    const removeAccount = db.transaction(() => {
+      return db.prepare('DELETE FROM users WHERE id=?').run(account.id).changes;
+    });
+    if (!removeAccount()) return res.status(404).json({ error: 'NOT_FOUND', message: '账户不存在。' });
+
+    res.clearCookie('nova_session', {
+      httpOnly: true,
+      secure: config.nodeEnv === 'production',
+      sameSite: 'strict',
+      path: '/api',
+    });
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      success: true,
+      message: '账户、项目、对话、消息和登录会话已删除。已发布的 Research 内容会保留，作者关联已清除。',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.patch('/me', requireAuth, (req, res) => {
   const parsed = profileSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'VALIDATION_ERROR', message: '姓名长度需要在 1–60 个字符之间。' });
