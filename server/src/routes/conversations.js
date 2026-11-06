@@ -10,7 +10,7 @@ import {
   streamAssistantReply,
   ProviderNotConfiguredError,
 } from '../services/provider.js';
-import { isPositiveId } from '../utils.js';
+import { isPositiveId } from '../utils.js';\nimport { startUsageRecord, finishUsageRecord } from '../services/usage.js';
 
 const router = Router();
 const activeGenerations = new Set();
@@ -93,7 +93,7 @@ function buildPrompt(conversationId, currentContent, beforeMessageId = null) {
 async function streamAssistantResponse(res, prompt, pending, generationKey, hooks = {}) {
   const controller = new AbortController();
   let clientDisconnected = false;
-  let partialContent = '';
+  let partialContent = '';\n  let providerUsage = null;
   const onClose = () => {
     if (!res.writableEnded) {
       clientDisconnected = true;
@@ -120,7 +120,7 @@ async function streamAssistantResponse(res, prompt, pending, generationKey, hook
     const content = await streamAssistantReply(prompt, {
       modelId: hooks.modelId || getModelRegistry().defaultModelId,
       signal: controller.signal,
-      onDelta(delta) {
+      onUsage(usage) { providerUsage = usage; },\n      onDelta(delta) {
         partialContent += delta;
         sendSse(res, 'message_delta', {
           messageId: pending.assistantMessageId,
@@ -139,7 +139,7 @@ async function streamAssistantResponse(res, prompt, pending, generationKey, hook
         'SELECT id,role,content,status,error_code,created_at FROM messages WHERE id=?',
       ).get(pending.assistantMessageId);
     }
-    sendSse(res, 'message_complete', { assistantMessage });
+    finishUsageRecord(hooks.usageRecord, { status: 'succeeded', usage: providerUsage });\n    sendSse(res, 'message_complete', { assistantMessage, requestId: hooks.usageRecord?.requestId || null });
     if (!res.writableEnded && !res.destroyed) res.end();
   } catch (error) {
     const cancelled = clientDisconnected || error?.code === 'AI_REQUEST_CANCELLED';
@@ -149,6 +149,12 @@ async function streamAssistantResponse(res, prompt, pending, generationKey, hook
       db.prepare('UPDATE messages SET content=?,status=?,error_code=? WHERE id=?')
         .run(partialContent, cancelled ? 'cancelled' : 'failed', cancelled ? 'AI_REQUEST_CANCELLED' : (error?.code || 'AI_PROVIDER_ERROR'), pending.assistantMessageId);
     }
+
+    finishUsageRecord(hooks.usageRecord, {
+      status: cancelled ? 'cancelled' : 'failed',
+      usage: providerUsage,
+      errorCode: cancelled ? 'AI_REQUEST_CANCELLED' : (error?.code || 'AI_PROVIDER_ERROR'),
+    });
 
     if (!clientDisconnected && !res.writableEnded && !res.destroyed) {
       sendSse(res, cancelled ? 'message_cancelled' : 'message_error', {
@@ -223,7 +229,8 @@ router.post('/:id/messages', generationLimiter, async (req, res, next) => {
     if (!findConversation(conversationId, req.user.id)) {
       return res.status(404).json({ error: 'NOT_FOUND', message: '对话不存在。' });
     }
-    if (!resolveModel()) throw new ProviderNotConfiguredError();
+    const selectedModel = resolveModel();
+    if (!selectedModel) throw new ProviderNotConfiguredError();
     const generationKey = String(req.user.id);
     if (activeGenerations.has(generationKey)) {
       return res.status(409).json({ error: 'AI_GENERATION_IN_PROGRESS', message: '当前账号已有生成任务，请等待完成或停止后重试。' });
@@ -233,8 +240,15 @@ router.post('/:id/messages', generationLimiter, async (req, res, next) => {
     try {
       const prompt = buildPrompt(conversationId, parsed.data.content);
       if (!prompt) return res.status(413).json({ error: 'AI_INPUT_TOO_LARGE', message: '当前消息超过服务端配置的字符预算，请缩短后重试。' });
+      const usageRecord = startUsageRecord({
+        userId: req.user.id,
+        providerId: selectedModel.providerId,
+        modelId: selectedModel.id,
+        operation: 'chat',
+      });
       const controller = new AbortController();
       let clientDisconnected = false;
+      let providerUsage = null;
       const onClose = () => {
         if (!res.writableEnded) {
           clientDisconnected = true;
@@ -243,29 +257,44 @@ router.post('/:id/messages', generationLimiter, async (req, res, next) => {
       };
       res.once('close', onClose);
 
-      let reply;
       try {
-        reply = await createAssistantReply(prompt, { signal: controller.signal });
+        const reply = await createAssistantReply(prompt, {
+          signal: controller.signal,
+          modelId: selectedModel.id,
+          onUsage(usage) { providerUsage = usage; },
+        });
+        if (clientDisconnected || controller.signal.aborted || res.destroyed) {
+          finishUsageRecord(usageRecord, { status: 'cancelled', usage: providerUsage, errorCode: 'AI_REQUEST_CANCELLED' });
+          return;
+        }
+
+        const insert = db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)');
+        const save = db.transaction(() => {
+          const userResult = insert.run(conversationId, 'user', parsed.data.content);
+          const assistantResult = insert.run(conversationId, 'assistant', reply);
+          db.prepare("UPDATE conversations SET title=CASE WHEN title='新对话' THEN ? ELSE title END,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+            .run(parsed.data.content.slice(0, 42), conversationId);
+          return {
+            userMessage: db.prepare('SELECT id,role,content,status,created_at FROM messages WHERE id=?').get(userResult.lastInsertRowid),
+            assistantMessage: db.prepare('SELECT id,role,content,status,created_at FROM messages WHERE id=?').get(assistantResult.lastInsertRowid),
+          };
+        });
+        const saved = save();
+        finishUsageRecord(usageRecord, { status: 'succeeded', usage: providerUsage });
+        res.status(201).json({ ...saved, requestId: usageRecord.requestId });
       } catch (error) {
-        if (clientDisconnected || controller.signal.aborted) return;
+        const cancelled = clientDisconnected || error?.code === 'AI_REQUEST_CANCELLED';
+        finishUsageRecord(usageRecord, {
+          status: cancelled ? 'cancelled' : 'failed',
+          usage: providerUsage,
+          errorCode: cancelled ? 'AI_REQUEST_CANCELLED' : (error?.code || 'AI_PROVIDER_ERROR'),
+        });
+        error.requestId = usageRecord.requestId;
+        if (cancelled || res.destroyed) return;
         throw error;
       } finally {
         res.removeListener('close', onClose);
       }
-      if (clientDisconnected || controller.signal.aborted || res.destroyed) return;
-
-      const insert = db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)');
-      const save = db.transaction(() => {
-        const userResult = insert.run(conversationId, 'user', parsed.data.content);
-        const assistantResult = insert.run(conversationId, 'assistant', reply);
-        db.prepare("UPDATE conversations SET title=CASE WHEN title='新对话' THEN ? ELSE title END,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-          .run(parsed.data.content.slice(0, 42), conversationId);
-        return {
-          userMessage: db.prepare('SELECT id,role,content,status,created_at FROM messages WHERE id=?').get(userResult.lastInsertRowid),
-          assistantMessage: db.prepare('SELECT id,role,content,status,created_at FROM messages WHERE id=?').get(assistantResult.lastInsertRowid),
-        };
-      });
-      res.status(201).json(save());
     } finally {
       activeGenerations.delete(generationKey);
     }
@@ -321,7 +350,16 @@ router.post('/:id/messages/stream', generationLimiter, async (req, res, next) =>
     return next(error);
   }
 
-  return streamAssistantResponse(res, prompt, pending, generationKey, { modelId: selectedModel.id });
+  let usageRecord;
+  try {
+    usageRecord = startUsageRecord({ userId: req.user.id, providerId: selectedModel.providerId, modelId: selectedModel.id, operation: 'stream' });
+  } catch (error) {
+    db.prepare('DELETE FROM messages WHERE conversation_id=? AND id IN (?,?)')
+      .run(conversationId, pending.userMessage.id, pending.assistantMessageId);
+    activeGenerations.delete(generationKey);
+    return next(error);
+  }
+  return streamAssistantResponse(res, prompt, pending, generationKey, { modelId: selectedModel.id, usageRecord });
 });
 
 router.put('/:id/messages/:messageId/stream', generationLimiter, async (req, res, next) => {
@@ -419,10 +457,19 @@ router.put('/:id/messages/:messageId/stream', generationLimiter, async (req, res
       .run(pending.assistantMessageId, conversationId);
   };
 
+  let usageRecord;
+  try {
+    usageRecord = startUsageRecord({ userId: req.user.id, providerId: selectedModel.providerId, modelId: selectedModel.id, operation: 'edit' });
+  } catch (error) {
+    discardPending();
+    activeGenerations.delete(generationKey);
+    return next(error);
+  }
   return streamAssistantResponse(res, prompt, pending, generationKey, {
     onSuccess: commitEdit,
     onFailure: discardPending,
     modelId: selectedModel.id,
+    usageRecord,
   });
 });
 
@@ -512,10 +559,19 @@ router.post('/:id/messages/:messageId/retry/stream', generationLimiter, async (r
       .run(pending.assistantMessageId, conversationId);
   };
 
+  let usageRecord;
+  try {
+    usageRecord = startUsageRecord({ userId: req.user.id, providerId: selectedModel.providerId, modelId: selectedModel.id, operation: 'retry' });
+  } catch (error) {
+    discardPending();
+    activeGenerations.delete(generationKey);
+    return next(error);
+  }
   return streamAssistantResponse(res, prompt, pending, generationKey, {
     onSuccess: commitRetry,
     onFailure: discardPending,
     modelId: selectedModel.id,
+    usageRecord,
   });
 });
 
