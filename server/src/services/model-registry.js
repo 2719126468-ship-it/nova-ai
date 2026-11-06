@@ -129,9 +129,11 @@ function loadDatabaseProviders(reservedIds) {
       });
       if (!provider) throw new Error('Invalid provider configuration.');
       providers.push(provider);
-    } catch {
+    } catch (error) {
       // Never fail all model routing because one saved credential cannot be decrypted.
-      configurationError = 'PROVIDER_SECRET_DECRYPT_FAILED';
+      configurationError = error?.code === 'PROVIDER_ENCRYPTION_NOT_CONFIGURED'
+        ? error.code
+        : 'PROVIDER_SECRET_DECRYPT_FAILED';
     }
   }
 
