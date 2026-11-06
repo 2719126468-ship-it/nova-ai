@@ -143,35 +143,51 @@ router.post('/:id/files', express.raw({ type: 'application/octet-stream', limit:
     }
   }
 
-  const usage = db.prepare(
-    'SELECT COUNT(*) AS count,COALESCE(SUM(size_bytes),0) AS bytes FROM project_files WHERE project_id=? AND user_id=?',
-  ).get(projectId, req.user.id);
-  if (usage.count >= MAX_PROJECT_FILES) {
+  const outcome = db.transaction(() => {
+    const usage = db.prepare(
+      'SELECT COUNT(*) AS count,COALESCE(SUM(size_bytes),0) AS bytes FROM project_files WHERE project_id=? AND user_id=?',
+    ).get(projectId, req.user.id);
+    if (usage.count >= MAX_PROJECT_FILES) return { error: 'PROJECT_FILE_LIMIT' };
+    if (usage.bytes + req.body.length > MAX_PROJECT_BYTES) return { error: 'PROJECT_STORAGE_LIMIT' };
+
+    const sha256 = createHash('sha256').update(req.body).digest('hex');
+    try {
+      const inserted = db.prepare(`
+        INSERT INTO project_files(
+          user_id,project_id,original_name,extension,mime_type,size_bytes,sha256,content,extracted_text
+        ) VALUES(?,?,?,?,?,?,?,?,?)
+      `).run(
+        req.user.id,
+        projectId,
+        name,
+        extension,
+        MIME_BY_EXTENSION[extension],
+        req.body.length,
+        sha256,
+        req.body,
+        extractedText,
+      );
+      return { id: inserted.lastInsertRowid };
+    } catch (error) {
+      if (String(error.code || '').includes('CONSTRAINT_UNIQUE')) {
+        return { error: 'DUPLICATE_PROJECT_FILE' };
+      }
+      throw error;
+    }
+  })();
+
+  if (outcome.error === 'PROJECT_FILE_LIMIT') {
     return res.status(409).json({ error: 'PROJECT_FILE_LIMIT', message: '每个项目最多保存 20 个文件。' });
   }
-  if (usage.bytes + req.body.length > MAX_PROJECT_BYTES) {
+  if (outcome.error === 'PROJECT_STORAGE_LIMIT') {
     return res.status(409).json({ error: 'PROJECT_STORAGE_LIMIT', message: '每个项目的文件总量不能超过 10 MiB。' });
   }
+  if (outcome.error === 'DUPLICATE_PROJECT_FILE') {
+    return res.status(409).json({ error: 'DUPLICATE_PROJECT_FILE', message: '该文件内容已经存在于此项目。' });
+  }
 
-  const sha256 = createHash('sha256').update(req.body).digest('hex');
-  try {
-    const inserted = db.prepare(`
-      INSERT INTO project_files(
-        user_id,project_id,original_name,extension,mime_type,size_bytes,sha256,content,extracted_text
-      ) VALUES(?,?,?,?,?,?,?,?,?)
-    `).run(
-      req.user.id,
-      projectId,
-      name,
-      extension,
-      MIME_BY_EXTENSION[extension],
-      req.body.length,
-      sha256,
-      req.body,
-      extractedText,
-    );
-    const file = readFile(inserted.lastInsertRowid, projectId, req.user.id);
-    res.status(201).json({
+  const file = readFile(outcome.id, projectId, req.user.id);
+  res.status(201).json({
       file: {
         id: file.id,
         name: file.original_name,
