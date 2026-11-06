@@ -21,6 +21,10 @@ const instructionSchema = z.object({
 });
 
 router.use(requireAuth);
+router.use((req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
 
 function readProject(projectId, userId) {
   return db.prepare(
