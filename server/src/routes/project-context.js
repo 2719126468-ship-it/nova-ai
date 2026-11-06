@@ -213,7 +213,7 @@ router.get('/:id/files/:fileId/download', (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.set('X-Content-Type-Options', 'nosniff');
   res.set('Content-Disposition', "attachment; filename*=UTF-8''" + encodeURIComponent(file.original_name));
-  res.type(file.mime_type);
+  res.set('Content-Type', file.mime_type);
   res.send(Buffer.from(file.content));
 });
 
