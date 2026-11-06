@@ -11,6 +11,7 @@ function formatBytes(value) {
 }
 
 export function ProjectContextIndex() {
+  const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
