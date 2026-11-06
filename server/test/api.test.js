@@ -667,7 +667,33 @@ test('provider timeout is classified and saved as a failed message', async () =>
 });
 
 
-test('context character budget keeps the newest complete turn and preserves current input', async () => {
+
+test('model-aware token estimation labels exact tokenizer and unknown-provider fallbacks', async () => {
+  const { countPromptTokens, resolveTokenizer } = await import('../src/services/token-budget.js');
+  assert.equal(resolveTokenizer({ upstreamModelId: 'gpt-4o-mini', tokenizer: 'auto' }), 'o200k_base');
+  assert.equal(resolveTokenizer({ upstreamModelId: 'gpt-4.1', tokenizer: 'auto' }), 'o200k_base');
+  assert.equal(resolveTokenizer({ upstreamModelId: 'gpt-4', tokenizer: 'auto' }), 'cl100k_base');
+  assert.equal(resolveTokenizer({ upstreamModelId: 'deepseek-chat', tokenizer: 'auto' }), null);
+
+  const messages = [{ role: 'user', content: 'hello 世界' }];
+  const estimated = countPromptTokens(messages, { tokenizer: 'o200k_base' });
+  assert.equal(estimated.source, 'tokenizer_estimate');
+  assert.equal(estimated.tokenizer, 'o200k_base');
+  assert.ok(Number.isSafeInteger(estimated.tokens) && estimated.tokens > 0);
+
+  const unknown = countPromptTokens(messages, { upstreamModelId: 'deepseek-chat', tokenizer: 'auto' });
+  assert.equal(unknown.source, 'unknown');
+  assert.equal(unknown.tokens, null);
+
+  const upperBound = countPromptTokens(messages, { upstreamModelId: 'deepseek-chat', tokenizer: 'auto' }, {
+    allowByteUpperBound: true,
+  });
+  assert.equal(upperBound.source, 'byte_upper_bound');
+  assert.equal(upperBound.confidence, 'conservative');
+  assert.ok(upperBound.tokens >= Buffer.byteLength('userhello 世界', 'utf8'));
+});
+
+test('model context budget keeps the newest complete turn and preserves current input', async () => {
   providerServer = createServer((incoming, outgoing) => {
     let body = '';
     incoming.setEncoding('utf8');
@@ -683,12 +709,27 @@ test('context character budget keeps the newest complete turn and preserves curr
     aiBaseUrl: config.aiBaseUrl,
     aiApiKey: config.aiApiKey,
     aiModel: config.aiModel,
+    aiProvidersJson: config.aiProvidersJson,
+    aiDefaultModelId: config.aiDefaultModelId,
     aiMaxContextChars: config.aiMaxContextChars,
+    aiContextOutputReserve: config.aiContextOutputReserve,
+    aiContextSafetyMarginPercent: config.aiContextSafetyMarginPercent,
   };
-  config.aiBaseUrl = 'http://127.0.0.1:' + providerServer.address().port + '/v1';
-  config.aiApiKey = 'context-test-secret';
-  config.aiModel = 'mock-context-model';
+  config.aiBaseUrl = '';
+  config.aiApiKey = '';
+  config.aiModel = '';
+  config.aiProvidersJson = JSON.stringify([{
+    id: 'context-test',
+    name: 'Context Test Provider',
+    baseUrl: 'http://127.0.0.1:' + providerServer.address().port + '/v1',
+    apiKey: 'context-test-secret',
+    enabled: true,
+    models: [{ id: 'gpt-4o-mini', contextLimit: 1024, tokenizer: 'auto' }],
+  }]);
+  config.aiDefaultModelId = 'context-test:gpt-4o-mini';
   config.aiMaxContextChars = 30;
+  config.aiContextOutputReserve = 128;
+  config.aiContextSafetyMarginPercent = 10;
 
   try {
     const agent = request.agent(app);
@@ -720,6 +761,11 @@ test('context character budget keeps the newest complete turn and preserves curr
       }).expect(200);
     assert.match(response.body, /event: message_complete/);
     assert.match(response.body, /Context window response/);
+    assert.match(response.body, /"modelContextWindowTokens":1024/);
+    assert.match(response.body, /"modelContextWindowSource":"environment_configured"/);
+    assert.match(response.body, /"tokenEstimateSource":"tokenizer_estimate"/);
+    assert.match(response.body, /"historyTruncated":true/);
+    assert.match(response.body, /"currentMessagePreserved":true/);
     assert.deepEqual(
       providerRequest.messages.map((message) => [message.role, message.content]),
       [['user', 'recent-user'], ['assistant', 'recent-answer'], ['user', 'now']],
@@ -733,11 +779,36 @@ test('context character budget keeps the newest complete turn and preserves curr
       "SELECT COUNT(*) AS count FROM messages WHERE conversation_id=? AND role='user' AND content='too long'",
     ).get(id);
     assert.equal(savedOversized.count, 0);
+
+    config.aiMaxContextChars = 40000;
+    config.aiProvidersJson = JSON.stringify([{
+      id: 'context-test',
+      name: 'Context Test Provider',
+      baseUrl: 'http://127.0.0.1:' + providerServer.address().port + '/v1',
+      apiKey: 'context-test-secret',
+      enabled: true,
+      models: [{ id: 'gpt-4o-mini', contextLimit: 256, tokenizer: 'auto' }],
+    }]);
+    const tokenLimitedContent = '中文'.repeat(100);
+    const tokenTooLarge = await agent.post('/api/v1/conversations/' + id + '/messages/stream')
+      .set(originHeaders).send({ content: tokenLimitedContent }).expect(413);
+    assert.equal(tokenTooLarge.body.error, 'AI_INPUT_TOO_LARGE');
+    assert.equal(tokenTooLarge.body.contextPolicy.modelContextWindowTokens, 256);
+    assert.equal(tokenTooLarge.body.contextPolicy.currentMessagePreserved, true);
+    assert.ok(tokenTooLarge.body.contextPolicy.estimatedInputTokens > tokenTooLarge.body.contextPolicy.inputTokenBudget);
+    const savedTokenOversized = db.prepare(
+      'SELECT COUNT(*) AS count FROM messages WHERE conversation_id=? AND role=\'user\' AND content=?',
+    ).get(id, tokenLimitedContent);
+    assert.equal(savedTokenOversized.count, 0);
   } finally {
     config.aiBaseUrl = previous.aiBaseUrl;
     config.aiApiKey = previous.aiApiKey;
     config.aiModel = previous.aiModel;
+    config.aiProvidersJson = previous.aiProvidersJson;
+    config.aiDefaultModelId = previous.aiDefaultModelId;
     config.aiMaxContextChars = previous.aiMaxContextChars;
+    config.aiContextOutputReserve = previous.aiContextOutputReserve;
+    config.aiContextSafetyMarginPercent = previous.aiContextSafetyMarginPercent;
     await new Promise((resolve) => providerServer.close(resolve));
     providerServer = null;
   }
