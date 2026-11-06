@@ -172,6 +172,8 @@ const migrations = [
       database.exec(`
         ALTER TABLE projects
           ADD COLUMN instructions TEXT NOT NULL DEFAULT '' CHECK(length(instructions) <= 16000);
+        ALTER TABLE projects
+          ADD COLUMN instructions_version INTEGER NOT NULL DEFAULT 1 CHECK(instructions_version >= 1);
 
         CREATE TABLE IF NOT EXISTS project_files (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
