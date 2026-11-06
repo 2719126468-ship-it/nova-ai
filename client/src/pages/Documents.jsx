@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowUpRight, Check, Clock3, FilePlus2, FileText, FolderOpen, LoaderCircle, RefreshCw, Search, ShieldCheck, SplitSquareVertical, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, Check, Clock3, Download, FilePlus2, FileText, FolderOpen, LoaderCircle, RefreshCw, Search, ShieldCheck, SplitSquareVertical, Trash2 } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -270,6 +270,18 @@ export function DocumentEditor() {
     }
   }
 
+  function downloadMarkdown() {
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = window.document.createElement('a');
+    anchor.href = url;
+    anchor.download = (title.trim() || 'nova-document').replace(/[\\\\/:*?"<>|]/g, '_') + '.md';
+    window.document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
+
   async function deleteDocument() {
     if (!window.confirm('删除这篇文档？此操作无法撤销。')) return;
     try {
@@ -299,6 +311,7 @@ export function DocumentEditor() {
         {lastSavedAt && saveStatus === 'saved' && <small>{formatDate(lastSavedAt)}</small>}
       </div>
       <div className="document-editor-actions">
+        <Button variant="outline" onClick={downloadMarkdown}><Download size={14} /> 导出 .md</Button>
         <Button variant="outline" onClick={saveAsCopy} disabled={copying || saving}><FilePlus2 size={14} /> 另存为副本</Button>
         <button type="button" className="documents-icon-button danger" onClick={deleteDocument} aria-label="删除文档"><Trash2 size={15} /></button>
       </div>
