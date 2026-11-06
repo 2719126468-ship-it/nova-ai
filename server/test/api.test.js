@@ -157,11 +157,11 @@ test('SSE chat streams deltas and persists the completed assistant message', asy
 
   try {
     const catalog = await request(app).get('/api/v1/models').expect(200);
-    assert.equal(catalog.provider.configured, true);
-    assert.equal(catalog.provider.status, 'configured_unverified');
-    assert.equal(catalog.provider.health, 'unknown');
-    assert.equal(catalog.models[0].status, 'unknown');
-    assert.equal(catalog.models[0].selectable, true);
+    assert.equal(catalog.body.provider.configured, true);
+    assert.equal(catalog.body.provider.status, 'configured_unverified');
+    assert.equal(catalog.body.provider.health, 'unknown');
+    assert.equal(catalog.body.models[0].status, 'unknown');
+    assert.equal(catalog.body.models[0].selectable, true);
     const agent = request.agent(app);
     await agent.post('/api/v1/auth/login').set(originHeaders)
       .send({ email: 'test@example.com', password: 'a-strong-test-password' }).expect(200);
