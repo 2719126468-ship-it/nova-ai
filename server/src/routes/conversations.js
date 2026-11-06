@@ -142,6 +142,7 @@ function readProjectPromptContext(conversationId, userId) {
         break;
       }
       const remaining = maxContextChars - totalChars;
+      if (remaining <= 100) { truncated = true; break; }
       const excerpt = String(file.extracted_text || '').slice(0, Math.min(maxFileChars, remaining - 80));
       if (!excerpt) {
         truncated = true;
