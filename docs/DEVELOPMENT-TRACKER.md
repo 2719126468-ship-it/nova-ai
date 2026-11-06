@@ -7,7 +7,7 @@
 
 ## Progress
 
-**5 / 12 complete** · 0 in progress · 7 planned
+**5 / 12 complete** · 1 in progress · 6 planned
 
 The existing V0.1 implementation is the foundation. Do not rebuild or replace working authentication, chat, SSE, model routing, Studio, account, or data-lifecycle flows. Extend them incrementally.
 
@@ -32,7 +32,7 @@ The existing V0.1 implementation is the foundation. Do not rebuild or replace wo
 
 | ID | Priority | Task | Status | Completion criteria |
 |---|---|---|---|---|
-| B2-01 | P0 | Provider management UI | Planned | Authorized administrators can add/edit/disable providers and models without exposing secrets to the browser; validate configuration and show honest connection state. |
+| B2-01 | P0 | Provider management UI | **In progress** | Authorized administrators can add/edit/disable providers and models without exposing secrets to the browser; validate configuration and show honest connection state. |
 | B2-02 | P0 | Model context-window and budget management | Planned | Enforce configured model context limits; distinguish provider-reported limits, tokenizer estimates, and unknown values; preserve the current user message and explain truncation/limits. |
 
 Additional model-system follow-ups, after the two P0 tasks: tokenizer-based estimation, health-state persistence/refresh, automatic model discovery, controlled failover, native Anthropic API support, and OAuth/browser-session providers. Each protocol requires its own adapter and security review; OpenAI-compatible support does not imply compatibility with browser-login providers.
@@ -65,6 +65,14 @@ Documents comes before project context/file management, and Research follows tho
 5. Usage and model-health labels reflect evidence; unknown values are not presented as verified.
 6. Documentation and the task status are updated in the same change.
 7. Version numbers are changed only when the corresponding release scope has passed acceptance.
+
+## 2026-11-07 — B2-01 implementation in progress
+
+- Added migration v5 for database-managed OpenAI-compatible Providers and a persisted default-model setting.
+- Added AES-256-GCM encryption for stored Provider API keys. The dedicated `PROVIDER_ENCRYPTION_KEY` is required for create/update operations; the browser receives neither plaintext keys nor ciphertext.
+- Added administrator-only list/create/update/delete/default-model endpoints. Environment-configured Providers remain read-only and retain precedence.
+- Added the first responsive Provider management screen under Admin, including model catalog editing, enable/disable, default selection, and read-only health probes.
+- Added integration coverage for role enforcement, ciphertext-at-rest, secret redaction, upstream health checks, environment precedence, and model disable/delete behavior. Keep B2-01 in progress until all branch CI checks pass.
 
 ## Completed work log
 
