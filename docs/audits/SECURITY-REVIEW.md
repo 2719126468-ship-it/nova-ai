@@ -77,3 +77,6 @@
 
 
 模型注册表安全复核（2026-11-06）：多 Provider 原始配置（baseUrl、apiKey）仅保留在服务端私有注册表；公开 Models API 只返回 provider id/name/configuration state/model metadata，不返回 API Key 或 baseUrl。CI 的多 Provider 集成测试使用两个独立的私密 Key，验证 Models 和 Health 响应均不包含 Key，且请求会使用对应 Provider 的 Authorization header 与 upstream model ID。配置文件只应写入服务器环境，不要提交真实 AI_PROVIDERS_JSON 到仓库。尚未进行完整 Git 历史密钥扫描或生产部署验证。
+
+
+按需 Provider 连接检查已新增：仅允许已登录用户使用，每用户每分钟最多 5 次；服务端使用对应私密 Key 读取 Provider `/models`，只在模型 ID 得到目录确认时标记 healthy；不支持该端点或不能确认时保持 unknown。此检查不生成模型回答、不发送用户提示词、不持久化长期健康状态。真实部署仍需验证上游各家 `/models` 兼容性和反向代理超时行为。

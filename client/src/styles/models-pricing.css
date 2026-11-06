@@ -18,3 +18,13 @@
 .model-registry-status.is-selectable { color: var(--muted); }
 .model-registry-status.is-disabled { opacity: .65; }
 @media (max-width: 560px) { .model-registry-row { align-items: flex-start; flex-direction: column; gap: 6px; } }
+
+.model-registry-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; }
+.model-registry-status { font-size: 8px; color: var(--subtle); }
+.model-registry-status.status-healthy { color: #39845f; }
+.model-registry-status.status-degraded { color: #a36f2b; }
+.model-registry-status.status-unavailable { color: #b45b5b; }
+.model-probe-button { border: 1px solid var(--line-strong); border-radius: 3px; padding: 6px 9px; background: transparent; color: var(--muted); font-size: 8px; white-space: nowrap; }
+.model-probe-button:hover:not(:disabled) { color: var(--ink); border-color: var(--ink); }
+.model-probe-button:disabled { opacity: .45; cursor: not-allowed; }
+@media (max-width: 560px) { .model-registry-actions { width: 100%; justify-content: space-between; } }

@@ -17,7 +17,11 @@ Returns API health and whether the server has a complete AI provider configurati
 
 ### GET /api/v1/models
 
-Returns the server-side model catalog. The response contains providers, models, defaultModelId and contextPolicy. API keys and provider base URLs are never returned. The top-level provider object reports configuration separately from upstream health; configured providers remain health: unknown until a real probe is implemented. The health endpoint returns ai.status as configured_unverified or not_configured.
+Returns the server-side model catalog. The response contains providers, models, defaultModelId and contextPolicy. API keys and provider base URLs are never returned. The top-level provider object reports configuration separately from upstream health; configured providers remain health: unknown until a real probe is run. The health endpoint returns ai.status as configured_unverified or not_configured.
+
+### POST /api/v1/models/health
+
+Requires an authenticated session and is limited to 5 checks per user per minute. Body: `{ "modelId": "provider-id:upstream-model-id" }`. The server makes a read-only authenticated GET request to the Provider's `/models` endpoint; it never generates a prompt or spends completion tokens. It returns `healthy` only when the upstream catalog confirms the exact upstream model ID. A provider that does not support `/models`, or returns an unrecognized catalog, remains `unknown` rather than being incorrectly marked unavailable. Authentication failures/server errors report `unavailable`; upstream 429 reports `degraded`. The result is an on-demand observation, not a persisted long-term health guarantee.
 
 A configured model has this shape:
 

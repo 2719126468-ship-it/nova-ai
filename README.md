@@ -180,7 +180,7 @@ AI_DEFAULT_MODEL=
 - Provider 密钥不会写入浏览器，也不会出现在 `/api/v1/models` 或健康检查响应中。
 - 修改配置后重启服务端。
 - 尚未配置可选择的模型时，聊天接口会返回 `503 AI_PROVIDER_NOT_CONFIGURED`；不会生成虚构回答。
-- 旧版 `POST /api/conversations/:id/messages` 保留完整 JSON 响应；新版 `POST /api/v1/conversations/:id/messages/stream` 支持 SSE 增量输出、上游请求取消和消息生命周期状态。模型目录区分配置、启用、可选择与上游健康状态；多 Provider JSON 注册表已支持 OpenAI-compatible Chat Completions，但尚无主动健康检查、自动发现、浏览器登录/OAuth Provider、工具调用或图片输入。
+- 旧版 `POST /api/conversations/:id/messages` 保留完整 JSON 响应；新版 `POST /api/v1/conversations/:id/messages/stream` 支持 SSE 增量输出、上游请求取消和消息生命周期状态。模型目录区分配置、启用、可选择与上游健康状态；多 Provider JSON 注册表已支持 OpenAI-compatible Chat Completions，已支持按需读取上游 `/models` 目录核验模型 ID，但没有自动健康巡检；自动发现、浏览器登录/OAuth Provider、工具调用或图片输入仍未实现。
 
 ## 测试与构建
 

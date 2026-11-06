@@ -1,14 +1,42 @@
 import { useEffect, useState } from 'react';
 import { ArrowUpRight, BrainCircuit, CircleDashed, LockKeyhole, Server, SlidersHorizontal } from 'lucide-react';
-import { api } from '../lib/api';
+import { api, json } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { Button, ErrorNotice, Loading, PageIntro } from '../components/UI';
 
 export default function Models() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
+  const [healthByModel, setHealthByModel] = useState({});
+  const [checkingModelId, setCheckingModelId] = useState(null);
+  const { user } = useAuth();
   useEffect(() => { api('/api/v1/models').then(setData).catch((e) => setError(e.message)); }, []);
   const model = data?.models?.find((item) => item.id === data.defaultModelId) || data?.models?.find((item) => item.selectable) || null;
   const configured = Boolean(data?.configured);
+
+  async function checkModel(modelId) {
+    if (!user || checkingModelId) return;
+    setCheckingModelId(modelId);
+    setError('');
+    try {
+      const result = await api('/api/v1/models/health', {
+        method: 'POST',
+        body: json({ modelId }),
+      });
+      setHealthByModel((current) => ({ ...current, [modelId]: result }));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setCheckingModelId(null);
+    }
+  }
+
+  const healthLabel = (status) => ({
+    healthy: '已验证可访问',
+    degraded: '上游受限',
+    unavailable: '连接失败',
+    unknown: '状态未知',
+  }[status] || '尚未检查');
 
   return <main className="page-wrap container-wide">
     <PageIntro eyebrow="NOVA MODEL LAYER" title={<>模型是引擎，<br />体验才是方向。</>} description="NOVA 不绑定单一模型服务。通过服务器端 Provider Adapter，你可以接入兼容 OpenAI Chat Completions 格式的 API。" />
@@ -35,7 +63,7 @@ export default function Models() {
       <div className="model-registry-list">
         {data.models.map((item) => <div className="model-registry-row" key={item.id}>
           <div><strong>{item.name}</strong><span>{item.providerName || item.provider} · {item.capabilities?.join(' / ') || 'text'}</span></div>
-          <span className={'model-registry-status ' + (item.selectable ? 'is-selectable' : 'is-disabled')}>{item.selectable ? '已配置 · 状态未知' : item.enabled ? '未配置' : '已禁用'}</span>
+          <div className="model-registry-actions"><span className={'model-registry-status status-' + (healthByModel[item.id]?.status || item.status)}>{healthLabel(healthByModel[item.id]?.status || item.status)}</span><button type="button" className="model-probe-button" onClick={() => checkModel(item.id)} disabled={!user || !item.selectable || Boolean(checkingModelId)} title={!user ? '登录后可以检查模型连接' : '检查 Provider 模型目录'}>{checkingModelId === item.id ? '检查中…' : user ? '检查连接' : '登录后检查'}</button></div>
         </div>)}
       </div>
       <div className="config-warning"><CircleDashed size={15} />上游健康状态：未知。只有真实探测成功后，NOVA 才会显示已验证。</div>

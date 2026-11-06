@@ -1090,6 +1090,11 @@ test('multi-provider model registry keeps API keys private and routes the select
     incoming.setEncoding('utf8');
     incoming.on('data', (chunk) => { body += chunk; });
     incoming.on('end', () => {
+      if (incoming.method === 'GET') {
+        outgoing.writeHead(200, { 'Content-Type': 'application/json' });
+        outgoing.end(JSON.stringify({ data: [{ id: 'upstream-chat-v2' }, { id: 'disabled-model' }] }));
+        return;
+      }
       capturedRequest = JSON.parse(body);
       outgoing.writeHead(200, { 'Content-Type': 'text/event-stream' });
       outgoing.end('data: {"choices":[{"delta":{"content":"Model selected correctly"}}]}\n\ndata: [DONE]\n\n');
@@ -1102,6 +1107,11 @@ test('multi-provider model registry keeps API keys private and routes the select
     incoming.setEncoding('utf8');
     incoming.on('data', (chunk) => { body += chunk; });
     incoming.on('end', () => {
+      if (incoming.method === 'GET') {
+        outgoing.writeHead(200, { 'Content-Type': 'application/json' });
+        outgoing.end(JSON.stringify({ data: [{ id: 'remote-chat' }] }));
+        return;
+      }
       capturedSecondRequest = JSON.parse(body);
       outgoing.writeHead(200, { 'Content-Type': 'application/json' });
       outgoing.end(JSON.stringify({ choices: [{ message: { content: 'Second provider selected correctly' } }] }));
@@ -1158,6 +1168,14 @@ test('multi-provider model registry keeps API keys private and routes the select
       name: 'Model Registry Tester',
       password: 'model-registry-test-password',
     }).expect(201);
+    const firstHealth = await agent.post('/api/v1/models/health').set(originHeaders)
+      .send({ modelId: 'local-test:upstream-chat-v2' }).expect(200);
+    assert.equal(firstHealth.body.status, 'healthy');
+    assert.equal(firstHealth.body.code, 'MODEL_LIST_CONFIRMED');
+    const secondHealth = await agent.post('/api/v1/models/health').set(originHeaders)
+      .send({ modelId: 'remote-test:remote-chat' }).expect(200);
+    assert.equal(secondHealth.body.status, 'healthy');
+    assert.equal(secondHealth.body.modelId, 'remote-test:remote-chat');
     const created = await agent.post('/api/v1/conversations').set(originHeaders)
       .send({ title: 'Selected model test' }).expect(201);
 

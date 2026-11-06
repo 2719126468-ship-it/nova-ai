@@ -5,6 +5,8 @@ import cookieParser from 'cookie-parser';
 import { rateLimit } from 'express-rate-limit';
 import { config } from './config.js';
 import { getModelRegistry } from './services/model-registry.js';
+import { requireAuth } from './middleware/auth.js';
+import { probeModel } from './services/model-health.js';
 import { requireAppRequest } from './middleware/security.js';
 import authRoutes from './routes/auth.js';
 import projectRoutes from './routes/projects.js';
@@ -101,6 +103,26 @@ export function createApp() {
   const models = (req, res) => res.json(getModelCatalog());
   app.get('/api/v1/models', models);
   app.get('/api/models', models);
+
+  const modelProbeLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 5,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator: (req) => 'user:' + req.user.id,
+    message: { error: 'MODEL_PROBE_RATE_LIMITED', message: '模型检查过于频繁，请稍后再试。' },
+  });
+  app.post('/api/v1/models/health', requireAuth, modelProbeLimiter, async (req, res, next) => {
+    const modelId = typeof req.body?.modelId === 'string' ? req.body.modelId.trim() : '';
+    if (!modelId || modelId.length > 300) {
+      return res.status(400).json({ error: 'VALIDATION_ERROR', message: '请提供有效的 modelId。' });
+    }
+    try {
+      res.json(await probeModel(modelId));
+    } catch (error) {
+      next(error);
+    }
+  });
 
   // /api/v1 is the canonical contract. /api remains as a compatibility alias.
   for (const prefix of ['/api/v1', '/api']) {

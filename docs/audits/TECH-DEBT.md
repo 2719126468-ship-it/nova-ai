@@ -7,7 +7,7 @@
 | ID | 技术债 | 影响 | 建议处理方式 | 验收标准 |
 |---|---|---|---|---|
 | TD-01 | Provider 只有非流式 JSON 调用 | 长回复等待时间长；无法停止；断连不能取消上游 | 实现 SSE adapter，支持 AbortSignal、超时、断连清理和事件状态 | token delta 连续输出；停止和断连会取消上游；消息不会卡在生成中 |
-| TD-02 | Model/Provider Registry 仍不完整 | 多 Provider 配置与模型选择已落地，但缺主动健康探测、管理界面、自动发现与 failover | 已支持 AI_PROVIDERS_JSON 多 OpenAI-compatible Provider、服务端密钥解析、public model ID 与上游 ID 映射、enabled/selectable 和 Chat 选择器；CI 覆盖两家 Provider 实际路由及密钥不泄露 | Models API 不返回密钥或 baseUrl；停用模型不能调用；切换模型后请求命中对应 provider/baseUrl/upstreamModelId；未探测状态为 unknown |
+| TD-02 | Model/Provider Registry 仍不完整 | 多 Provider 配置与模型选择已落地，但缺自动健康巡检、管理界面、自动发现与 failover | 已支持 AI_PROVIDERS_JSON 多 OpenAI-compatible Provider、服务端密钥解析、public model ID 与上游 ID 映射、enabled/selectable、Chat 选择器及按需 /models 健康检查；CI 覆盖 Provider 实际路由和密钥不泄露 | Models API 不返回密钥或 baseUrl；停用模型不能调用；按需探测只请求上游 /models，不发送 completion；未确认模型存在时仍为 unknown |
 | TD-03 | 会话操作缺失 | 用户无法整理长期聊天 | 增加重命名、搜索/归档（按范围决定）、消息编辑、重试/重新生成接口 | 对话元数据可持久化；编辑后后续消息顺序与上下文一致 |
 | TD-04 | 消息操作尚不完整 | 常用 AI 工作流仍缺回答版本历史与撤销 | 已增加复制、用户消息编辑、末轮 assistant 重新生成和最新失败/取消回答重试；替换只在成功时提交，失败/取消保留旧分支 | 编辑/重试成功和失败测试通过；旧分支不会因 Provider 失败或停止而丢失；剩余补回答版本/撤销 |
 | TD-05 | 尚无 Provider Token 级上下文预算 | 模型窗口和实际 Token 数未知，固定消息条数不等于上下文预算 | 已增加 AI_MAX_CONTEXT_CHARS 字符预算，优先保留最近完整轮次；下一步按 Provider 元数据增加 Token 预算/摘要 | 当前字符预算超限时保留用户输入或明确拒绝；不把字符估算冒充精确 Token；后续增加各模型 contextLimit 校验 |
