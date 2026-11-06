@@ -10,7 +10,7 @@ const emptyDraft = () => ({
   apiKey: '',
   enabled: true,
   modelsText: JSON.stringify([
-    { id: 'your-model-id', name: 'Model display name', enabled: true, capabilities: ['chat', 'text'], contextLimit: null },
+    { id: 'your-model-id', name: 'Model display name', enabled: true, capabilities: ['chat', 'text'], contextLimit: null, tokenizer: 'auto' },
   ], null, 2),
 });
 
@@ -235,7 +235,7 @@ export default function ProviderManagement() {
         <label className="provider-enabled-field"><input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} /> 启用此 Provider</label>
         <label className="provider-field-wide">模型列表（JSON）
           <textarea required rows={8} spellCheck={false} value={draft.modelsText} onChange={(event) => setDraft({ ...draft, modelsText: event.target.value })} />
-          <small>每个模型填写 id；name、enabled、capabilities、contextLimit 可选。contextLimit 是可选的参考字段；当前仅保存和展示，不代表经过验证的上限，也不会限制请求。未知时填写 null。</small>
+          <small>每个模型填写 id；name、enabled、capabilities、contextLimit、tokenizer 可选。contextLimit 是管理员配置的参考上限；tokenizer 可填 auto、cl100k_base、o200k_base 或 none。自动识别仅覆盖常见 OpenAI 模型命名；其它模型请按实际 tokenizer 手动选择，否则使用保守字节上界。</small>
         </label>
       </div>
       <div className="provider-editor-actions">
