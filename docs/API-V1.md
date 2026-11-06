@@ -40,9 +40,27 @@ A configured model has this shape:
 }
 ```
 
-Model IDs returned by the catalog are the public selection IDs; multi-provider IDs use providerId:upstreamModelId. status: unknown means that the model is configured but has not been actively verified. Do not present this state as connected, healthy, or available. The current registry supports multiple OpenAI-compatible providers configured by the server; active health probes, browser-login/OAuth providers and automatic model discovery remain unimplemented.
+`contextLimit` is optional provider-supplied/configured reference metadata only. B2-01 stores and displays it but does not enforce it or treat it as a verified context window; token-aware request budgeting is tracked separately in B2-02. Model IDs returned by the catalog are the public selection IDs; multi-provider IDs use providerId:upstreamModelId. status: unknown means that the model is configured but has not been actively verified. Do not present this state as connected, healthy, or available. The registry supports OpenAI-compatible providers from server environment configuration and encrypted administrator-managed records. Environment-defined providers remain read-only in the admin UI and take precedence over database records with the same ID. Native Anthropic protocol support, browser-login/OAuth providers and automatic model discovery remain unimplemented.
 
-Malformed AI_PROVIDERS_JSON disables the multi-provider registry and reports AI_PROVIDERS_JSON_INVALID in the catalog; a non-empty invalid JSON setting does not silently fall back to legacy credentials.
+Malformed AI_PROVIDERS_JSON disables the environment-defined provider set and reports AI_PROVIDERS_JSON_INVALID; it does not silently fall back to legacy environment credentials. Valid database-managed providers can still be loaded.
+
+## Provider administration
+
+The following endpoints require an authenticated administrator session.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | /api/v1/admin/providers | List database-managed and read-only environment-defined providers without returning credentials |
+| POST | /api/v1/admin/providers | Add an OpenAI-compatible provider and its model catalog |
+| PUT | /api/v1/admin/providers/:id | Update a database-managed provider; an omitted/blank API key keeps the existing credential |
+| DELETE | /api/v1/admin/providers/:id | Delete a database-managed provider and clear its selected default when necessary |
+| PUT | /api/v1/admin/model-default | Set or clear the default selectable model |
+
+Database-managed Provider API keys are encrypted at rest with AES-256-GCM. Set `PROVIDER_ENCRYPTION_KEY` to at least 32 random characters before using provider management (for example, generate one once with `openssl rand -hex 32`). Keep this key in the server's secret environment and preserve it in secure backups. Replacing or losing it makes existing encrypted Provider credentials unreadable. The key, plaintext API keys and ciphertext are never returned to the browser; the admin view receives only a `hasApiKey` flag.
+
+Provider base URLs must be valid and cannot contain embedded usernames/passwords, query strings or fragments. Production deployments require HTTPS. Environment-defined providers are displayed as read-only; the admin UI cannot overwrite or delete them. When IDs conflict, environment configuration wins.
+
+The default model priority is `AI_DEFAULT_MODEL` / legacy `AI_MODEL`, then the database-managed default, then the first selectable model. Environment-controlled defaults cannot be overridden from the admin UI. A health check uses the existing read-only `GET /models` probe; it does not send a completion prompt.
 
 ## Context budget
 

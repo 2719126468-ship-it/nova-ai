@@ -81,6 +81,33 @@ const migrations = [
       `);
     },
   },
+  {
+    version: 5,
+    name: 'server-managed-ai-providers',
+    up(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS ai_providers (
+          id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 64),
+          name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 120),
+          protocol TEXT NOT NULL CHECK(protocol = 'openai-compatible'),
+          base_url TEXT NOT NULL CHECK(length(base_url) BETWEEN 1 AND 500),
+          api_key_encrypted TEXT NOT NULL,
+          enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+          models_json TEXT NOT NULL DEFAULT '[]',
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_providers_enabled
+          ON ai_providers(enabled, name);
+        CREATE TABLE IF NOT EXISTS ai_settings (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+    },
+  },
+
 ];
 
 export function runMigrations(database) {

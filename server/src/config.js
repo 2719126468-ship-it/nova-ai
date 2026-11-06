@@ -15,6 +15,7 @@ export const config = {
   aiModel: process.env.AI_MODEL || '',
   aiProvidersJson: process.env.AI_PROVIDERS_JSON || '',
   aiDefaultModelId: process.env.AI_DEFAULT_MODEL || '',
+  providerEncryptionKey: process.env.PROVIDER_ENCRYPTION_KEY || '',
   aiTimeoutMs: Number(process.env.AI_TIMEOUT_MS || 60000),
   aiMaxContextChars: Number(process.env.AI_MAX_CONTEXT_CHARS || 40000),
   sessionDays: 7,
@@ -28,6 +29,9 @@ export function assertConfig() {
   }
   if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) {
     throw new Error('PORT must be a valid TCP port.');
+  }
+  if (config.providerEncryptionKey && config.providerEncryptionKey.length < 32) {
+    throw new Error('PROVIDER_ENCRYPTION_KEY must contain at least 32 characters when configured.');
   }
   if (!Number.isInteger(config.aiMaxContextChars) || config.aiMaxContextChars < 512 || config.aiMaxContextChars > 200000) {
     throw new Error('AI_MAX_CONTEXT_CHARS must be an integer between 512 and 200000.');

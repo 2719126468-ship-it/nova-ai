@@ -11,6 +11,7 @@ process.env.NODE_ENV = 'test';
 process.env.PORT = '0';
 process.env.WEB_ORIGIN = 'http://localhost:5173';
 process.env.SESSION_SECRET = 'test-secret-with-more-than-32-characters-long';
+process.env.PROVIDER_ENCRYPTION_KEY = 'test-provider-encryption-key-with-32-plus-characters';
 process.env.DB_PATH = path.join(tempDir, 'test.sqlite');
 process.env.AI_BASE_URL = '';
 process.env.AI_API_KEY = '';
@@ -101,7 +102,7 @@ test('database migrations add message lifecycle fields and are idempotent', () =
   assert.ok(columns.has('status'));
   assert.ok(columns.has('error_code'));
   const versions = db.prepare('SELECT version FROM schema_migrations ORDER BY version').all();
-  assert.deepEqual(versions.map((row) => row.version), [1, 2, 3, 4]);
+  assert.deepEqual(versions.map((row) => row.version), [1, 2, 3, 4, 5]);
   const versionColumns = new Set(db.prepare('PRAGMA table_info(message_versions)').all().map((column) => column.name));
   assert.ok(versionColumns.has('message_id'));
   assert.ok(versionColumns.has('content'));
@@ -111,6 +112,13 @@ test('database migrations add message lifecycle fields and are idempotent', () =
   assert.ok(usageColumns.has('provider_id'));
   assert.ok(usageColumns.has('input_tokens'));
   assert.ok(usageColumns.has('status'));
+  const providerColumns = new Set(db.prepare('PRAGMA table_info(ai_providers)').all().map((column) => column.name));
+  assert.ok(providerColumns.has('api_key_encrypted'));
+  assert.ok(providerColumns.has('models_json'));
+  assert.ok(providerColumns.has('enabled'));
+  const settingsColumns = new Set(db.prepare('PRAGMA table_info(ai_settings)').all().map((column) => column.name));
+  assert.ok(settingsColumns.has('key'));
+  assert.ok(settingsColumns.has('value'));
 });
 
 test('versioned models endpoint does not claim an unconfigured model is connected', async () => {
@@ -1679,4 +1687,165 @@ test('administrator usage endpoint returns stored records and provider-reported 
     .send({ email: 'usage-regular@example.com', password: 'usage-regular-password-strong' }).expect(200);
   await regular.get('/api/v1/admin/usage').expect(403);
 });
+
+test('admin provider management encrypts secrets, enforces role boundaries, and updates the model registry', async () => {
+  const previous = {
+    aiBaseUrl: config.aiBaseUrl,
+    aiApiKey: config.aiApiKey,
+    aiModel: config.aiModel,
+    aiProvidersJson: config.aiProvidersJson,
+    aiDefaultModelId: config.aiDefaultModelId,
+    providerEncryptionKey: config.providerEncryptionKey,
+  };
+  let adminProviderServer;
+  let receivedAuthorization = null;
+
+  try {
+    config.aiBaseUrl = '';
+    config.aiApiKey = '';
+    config.aiModel = '';
+    config.aiProvidersJson = '';
+    config.aiDefaultModelId = '';
+    config.providerEncryptionKey = process.env.PROVIDER_ENCRYPTION_KEY;
+
+    const regular = request.agent(app);
+    await regular.post('/api/v1/auth/register').set(originHeaders).send({
+      email: 'provider-regular@example.com',
+      name: 'Regular Provider User',
+      password: 'provider-regular-password-strong',
+    }).expect(201);
+    await regular.post('/api/v1/auth/login').set(originHeaders).send({
+      email: 'provider-regular@example.com',
+      password: 'provider-regular-password-strong',
+    }).expect(200);
+    await regular.get('/api/v1/admin/providers').expect(403);
+
+    const admin = request.agent(app);
+    await admin.post('/api/v1/auth/register').set(originHeaders).send({
+      email: 'provider-admin@example.com',
+      name: 'Provider Admin',
+      password: 'provider-admin-password-strong',
+    }).expect(201);
+    const adminUser = db.prepare('SELECT id FROM users WHERE email=?').get('provider-admin@example.com');
+    db.prepare("UPDATE users SET role='admin' WHERE id=?").run(adminUser.id);
+    await admin.post('/api/v1/auth/login').set(originHeaders).send({
+      email: 'provider-admin@example.com',
+      password: 'provider-admin-password-strong',
+    }).expect(200);
+
+    const previousNodeEnv = config.nodeEnv;
+    config.nodeEnv = 'production';
+    await admin.post('/api/v1/admin/providers').set(originHeaders).send({
+      id: 'http-production-blocked',
+      name: 'HTTP Must Be Blocked',
+      baseUrl: 'http://127.0.0.1:4000/v1',
+      apiKey: 'test-secret',
+      models: [{ id: 'test-model' }],
+    }).expect(400);
+    config.nodeEnv = previousNodeEnv;
+
+    adminProviderServer = createServer((incoming, outgoing) => {
+      receivedAuthorization = incoming.headers.authorization || null;
+      if (incoming.method === 'GET' && incoming.url === '/v1/models') {
+        outgoing.writeHead(200, { 'Content-Type': 'application/json' });
+        outgoing.end(JSON.stringify({ data: [{ id: 'managed-chat' }] }));
+        return;
+      }
+      outgoing.writeHead(404, { 'Content-Type': 'application/json' });
+      outgoing.end(JSON.stringify({ error: 'not found' }));
+    });
+    await new Promise((resolve) => adminProviderServer.listen(0, '127.0.0.1', resolve));
+    const secret = 'admin-managed-provider-secret';
+
+    const created = await admin.post('/api/v1/admin/providers').set(originHeaders).send({
+      id: 'managed-test',
+      name: 'Managed Test Provider',
+      baseUrl: 'http://127.0.0.1:' + adminProviderServer.address().port + '/v1',
+      apiKey: secret,
+      enabled: true,
+      models: [{ id: 'managed-chat', name: 'Managed Chat', contextLimit: 65536 }],
+    }).expect(201);
+    assert.equal(created.body.providers.some((provider) => provider.id === 'managed-test' && provider.hasApiKey), true);
+
+    const stored = db.prepare('SELECT api_key_encrypted FROM ai_providers WHERE id=?').get('managed-test');
+    assert.match(stored.api_key_encrypted, /^v1\./);
+    assert.equal(stored.api_key_encrypted.includes(secret), false);
+    const management = await admin.get('/api/v1/admin/providers').expect(200);
+    const managed = management.body.providers.find((provider) => provider.id === 'managed-test');
+    assert.equal(managed.readOnly, false);
+    assert.equal(managed.hasApiKey, true);
+    assert.equal(JSON.stringify(management.body).includes(secret), false);
+    assert.equal(JSON.stringify(management.body).includes(stored.api_key_encrypted), false);
+
+    const catalog = await request(app).get('/api/v1/models').expect(200);
+    const model = catalog.body.models.find((item) => item.id === 'managed-test:managed-chat');
+    assert.equal(model.selectable, true);
+    assert.equal(JSON.stringify(catalog.body).includes(secret), false);
+    assert.equal(JSON.stringify(catalog.body).includes('api_key_encrypted'), false);
+
+    const health = await admin.post('/api/v1/models/health').set(originHeaders)
+      .send({ modelId: 'managed-test:managed-chat' }).expect(200);
+    assert.equal(health.body.status, 'healthy');
+    assert.equal(receivedAuthorization, 'Bearer ' + secret);
+
+    const defaultModel = await admin.put('/api/v1/admin/model-default').set(originHeaders)
+      .send({ defaultModelId: 'managed-test:managed-chat' }).expect(200);
+    assert.equal(defaultModel.body.defaultModelId, 'managed-test:managed-chat');
+    assert.equal(defaultModel.body.defaultModelSource, 'database');
+
+    const cipherBefore = stored.api_key_encrypted;
+    await admin.put('/api/v1/admin/providers/managed-test').set(originHeaders)
+      .send({ name: 'Renamed Managed Provider' }).expect(200);
+    const cipherAfter = db.prepare('SELECT api_key_encrypted FROM ai_providers WHERE id=?').get('managed-test');
+    assert.equal(cipherAfter.api_key_encrypted, cipherBefore);
+
+    await admin.put('/api/v1/admin/providers/managed-test').set(originHeaders)
+      .send({ enabled: false }).expect(200);
+    const disabledCatalog = await request(app).get('/api/v1/models').expect(200);
+    assert.equal(disabledCatalog.body.models.find((item) => item.id === 'managed-test:managed-chat').selectable, false);
+
+    await admin.put('/api/v1/admin/providers/managed-test').set(originHeaders)
+      .send({ enabled: true, apiKey: 'replacement-provider-secret' }).expect(200);
+    const reencrypted = db.prepare('SELECT api_key_encrypted FROM ai_providers WHERE id=?').get('managed-test');
+    assert.notEqual(reencrypted.api_key_encrypted, cipherBefore);
+    assert.equal(reencrypted.api_key_encrypted.includes('replacement-provider-secret'), false);
+
+    config.aiProvidersJson = JSON.stringify([{
+      id: 'environment-test',
+      name: 'Environment Test Provider',
+      baseUrl: 'https://environment.example/v1',
+      apiKey: 'environment-secret',
+      models: [{ id: 'environment-chat' }],
+    }]);
+    const withEnvironment = await admin.get('/api/v1/admin/providers').expect(200);
+    const environmentProvider = withEnvironment.body.providers.find((provider) => provider.id === 'environment-test');
+    assert.equal(environmentProvider.readOnly, true);
+    assert.equal(environmentProvider.baseUrl, null);
+    assert.equal(JSON.stringify(withEnvironment.body).includes('environment-secret'), false);
+    await admin.post('/api/v1/admin/providers').set(originHeaders).send({
+      id: 'environment-test',
+      name: 'Must Not Override',
+      baseUrl: 'https://environment.example/v1',
+      apiKey: 'another-secret',
+      models: [{ id: 'environment-chat' }],
+    }).expect(409);
+
+    config.aiProvidersJson = '';
+    await admin.delete('/api/v1/admin/providers/managed-test').set(originHeaders).expect(200);
+    assert.equal(db.prepare("SELECT value FROM ai_settings WHERE key='default_model_id'").get(), undefined);
+    const finalCatalog = await request(app).get('/api/v1/models').expect(200);
+    assert.equal(finalCatalog.body.models.some((item) => item.id.startsWith('managed-test:')), false);
+  } finally {
+    config.aiBaseUrl = previous.aiBaseUrl;
+    config.aiApiKey = previous.aiApiKey;
+    config.aiModel = previous.aiModel;
+    config.aiProvidersJson = previous.aiProvidersJson;
+    config.aiDefaultModelId = previous.aiDefaultModelId;
+    config.providerEncryptionKey = previous.providerEncryptionKey;
+    if (adminProviderServer?.listening) {
+      await new Promise((resolve) => adminProviderServer.close(resolve));
+    }
+  }
+});
+
 

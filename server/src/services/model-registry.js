@@ -1,4 +1,6 @@
 import { config } from '../config.js';
+import { db } from '../db.js';
+import { decryptProviderSecret } from './provider-secrets.js';
 
 const PROVIDER_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
 
@@ -64,7 +66,7 @@ function normalizeProvider(provider) {
   };
 }
 
-function loadPrivateProviders() {
+function loadEnvironmentProviders() {
   if (config.aiProvidersJson.trim()) {
     const parsed = parseProviderConfig(config.aiProvidersJson);
     if (!parsed) return { providers: [], configurationError: 'AI_PROVIDERS_JSON_INVALID' };
@@ -104,6 +106,54 @@ function loadPrivateProviders() {
   return { providers: [], configurationError: null };
 }
 
+function loadDatabaseProviders(reservedIds) {
+  const providers = [];
+  let configurationError = null;
+  const rows = db.prepare(
+    'SELECT id,name,base_url,api_key_encrypted,enabled,models_json FROM ai_providers ORDER BY id',
+  ).all();
+
+  for (const row of rows) {
+    // Environment-managed providers are authoritative and cannot be overwritten in the UI.
+    if (reservedIds.has(row.id)) continue;
+    try {
+      const models = JSON.parse(row.models_json);
+      if (!Array.isArray(models)) throw new Error('Invalid provider model configuration.');
+      const provider = normalizeProvider({
+        id: row.id,
+        name: row.name,
+        baseUrl: row.base_url,
+        apiKey: decryptProviderSecret(row.api_key_encrypted),
+        enabled: row.enabled === 1,
+        models,
+      });
+      if (!provider) throw new Error('Invalid provider configuration.');
+      providers.push(provider);
+    } catch (error) {
+      // Never fail all model routing because one saved credential cannot be decrypted.
+      configurationError = error?.code === 'PROVIDER_ENCRYPTION_NOT_CONFIGURED'
+        ? error.code
+        : 'PROVIDER_SECRET_DECRYPT_FAILED';
+    }
+  }
+
+  return { providers, configurationError };
+}
+
+function loadPrivateProviders() {
+  const environment = loadEnvironmentProviders();
+  const reservedIds = new Set(environment.providers.map((provider) => provider.id));
+  const managed = loadDatabaseProviders(reservedIds);
+  return {
+    providers: [...environment.providers, ...managed.providers],
+    configurationError: environment.configurationError || managed.configurationError,
+  };
+}
+
+function getStoredDefaultModelId() {
+  return db.prepare("SELECT value FROM ai_settings WHERE key='default_model_id'").get()?.value || '';
+}
+
 function buildCatalog(privateProviders, configurationError) {
   const models = privateProviders.flatMap((provider) => provider.models.map((model) => ({
     id: model.id,
@@ -119,7 +169,7 @@ function buildCatalog(privateProviders, configurationError) {
     contextLimit: model.contextLimit,
   })));
 
-  const requestedDefault = config.aiDefaultModelId || config.aiModel;
+  const requestedDefault = config.aiDefaultModelId || config.aiModel || getStoredDefaultModelId();
   const defaultModel = models.find((model) => model.id === requestedDefault && model.selectable)
     || models.find((model) => model.selectable);
 
