@@ -75,6 +75,93 @@ test('authenticated users can create, update and delete their own projects', asy
   await agent.get('/api/projects/' + id).set(originHeaders).expect(404);
 });
 
+test('project context instructions and files enforce owner isolation, versioning, validation and opt-in', async () => {
+  const owner = request.agent(app);
+  const other = request.agent(app);
+  await owner.post('/api/v1/auth/register').set(originHeaders).send({
+    email: 'project-files-owner@example.com',
+    name: 'Project File Owner',
+    password: 'project-files-owner-password-strong',
+  }).expect(201);
+  await other.post('/api/v1/auth/register').set(originHeaders).send({
+    email: 'project-files-other@example.com',
+    name: 'Other Project User',
+    password: 'project-files-other-password-strong',
+  }).expect(201);
+
+  const ownProject = await owner.post('/api/v1/projects').set(originHeaders)
+    .send({ title: 'Context project' }).expect(201);
+  const foreignProject = await other.post('/api/v1/projects').set(originHeaders)
+    .send({ title: 'Foreign project' }).expect(201);
+  const projectId = ownProject.body.project.id;
+
+  const context = await owner.get('/api/v1/projects/' + projectId + '/context').expect(200);
+  assert.equal(context.body.project.instructions, '');
+  assert.equal(context.body.project.instructionsVersion, 1);
+  assert.deepEqual(context.body.files, []);
+
+  const savedInstructions = await owner.put('/api/v1/projects/' + projectId + '/context')
+    .set(originHeaders).send({ instructions: 'Prefer concise technical answers.', expectedVersion: 1 }).expect(200);
+  assert.equal(savedInstructions.body.project.instructionsVersion, 2);
+  assert.equal(savedInstructions.body.project.instructions, 'Prefer concise technical answers.');
+  await owner.put('/api/v1/projects/' + projectId + '/context').set(originHeaders)
+    .send({ instructions: 'A stale edit', expectedVersion: 1 }).expect(409);
+  await owner.put('/api/v1/projects/' + projectId + '/context').set(originHeaders)
+    .send({ instructions: 'x'.repeat(16001), expectedVersion: 2 }).expect(400);
+  await owner.get('/api/v1/projects/' + foreignProject.body.project.id + '/context').expect(404);
+
+  const markdown = Buffer.from('# Project reference\nOnly include this after the owner opts in.', 'utf8');
+  const uploaded = await owner.post('/api/v1/projects/' + projectId + '/files')
+    .set(originHeaders).set('Content-Type', 'application/octet-stream')
+    .set('X-File-Name', encodeURIComponent('project-notes.md')).send(markdown).expect(201);
+  const fileId = uploaded.body.file.id;
+  assert.equal(uploaded.body.file.includeInContext, false);
+  assert.equal(uploaded.body.file.sizeBytes, markdown.length);
+  await owner.post('/api/v1/projects/' + projectId + '/files')
+    .set(originHeaders).set('Content-Type', 'application/octet-stream')
+    .set('X-File-Name', encodeURIComponent('duplicate.md')).send(markdown).expect(409);
+  await owner.post('/api/v1/projects/' + projectId + '/files')
+    .set(originHeaders).set('Content-Type', 'application/octet-stream')
+    .set('X-File-Name', encodeURIComponent('unsafe.pdf')).send(Buffer.from('%PDF-1.7')).expect(415);
+  await owner.post('/api/v1/projects/' + projectId + '/files')
+    .set(originHeaders).set('Content-Type', 'application/octet-stream')
+    .set('X-File-Name', encodeURIComponent('bad.json')).send(Buffer.from('{ invalid }')).expect(400);
+  await owner.post('/api/v1/projects/' + projectId + '/files')
+    .set(originHeaders).set('Content-Type', 'application/octet-stream')
+    .set('X-File-Name', encodeURIComponent('bad-encoding.txt')).send(Buffer.from([0xff, 0xfe])).expect(415);
+
+  const listed = await owner.get('/api/v1/projects/' + projectId + '/files').expect(200);
+  assert.equal(listed.body.files.length, 1);
+  assert.equal(listed.body.files[0].includeInContext, false);
+  assert.equal(Object.hasOwn(listed.body.files[0], 'content'), false);
+  const included = await owner.patch('/api/v1/projects/' + projectId + '/files/' + fileId)
+    .set(originHeaders).send({ includeInContext: true }).expect(200);
+  assert.equal(included.body.files[0].includeInContext, true);
+  const stored = db.prepare('SELECT extracted_text,include_in_context FROM project_files WHERE id=?').get(fileId);
+  assert.equal(stored.extracted_text, markdown.toString('utf8'));
+  assert.equal(stored.include_in_context, 1);
+  await owner.patch('/api/v1/projects/' + projectId + '/files/' + fileId)
+    .set(originHeaders).send({ includeInContext: false }).expect(200);
+
+  const downloaded = await owner.get('/api/v1/projects/' + projectId + '/files/' + fileId + '/download')
+    .buffer(true).parse((incoming, callback) => {
+      const chunks = [];
+      incoming.on('data', (chunk) => chunks.push(chunk));
+      incoming.on('end', () => callback(null, Buffer.concat(chunks)));
+      incoming.on('error', callback);
+    }).expect(200);
+  assert.equal(downloaded.body.toString('utf8'), markdown.toString('utf8'));
+  await other.get('/api/v1/projects/' + projectId + '/files').expect(404);
+  await other.get('/api/v1/projects/' + projectId + '/files/' + fileId + '/download').expect(404);
+  await other.delete('/api/v1/projects/' + projectId + '/files/' + fileId).set(originHeaders).expect(404);
+  await owner.post('/api/v1/projects/' + foreignProject.body.project.id + '/files')
+    .set(originHeaders).set('Content-Type', 'application/octet-stream')
+    .set('X-File-Name', encodeURIComponent('cross-owner.md')).send(markdown).expect(404);
+
+  await owner.delete('/api/v1/projects/' + projectId).set(originHeaders).expect(200);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM project_files WHERE project_id=?').get(projectId).count, 0);
+});
+
 test('documents API enforces ownership, project isolation, validation, and optimistic concurrency', async () => {
   const owner = request.agent(app);
   const other = request.agent(app);
