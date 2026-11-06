@@ -148,6 +148,11 @@ test('project context instructions and files enforce owner isolation, versioning
   const ownerId = db.prepare('SELECT id FROM users WHERE email=?').get('project-files-owner@example.com').id;
   const { readProjectPromptContext } = await import('../src/routes/conversations.js');
   const includedContext = readProjectPromptContext(contextConversation.body.conversation.id, ownerId);
+  const otherId = db.prepare('SELECT id FROM users WHERE email=?').get('project-files-other@example.com').id;
+  assert.equal(readProjectPromptContext(contextConversation.body.conversation.id, otherId).message, null);
+  const unlinkedConversation = await owner.post('/api/v1/conversations').set(originHeaders)
+    .send({ title: 'Unlinked conversation' }).expect(201);
+  assert.equal(readProjectPromptContext(unlinkedConversation.body.conversation.id, ownerId).message, null);
   assert.ok(includedContext.message.content.includes('Prefer concise technical answers.'));
   assert.ok(includedContext.message.content.includes('Selected file: project-notes.md'));
   assert.ok(includedContext.message.content.includes('Only include this after the owner opts in.'));
