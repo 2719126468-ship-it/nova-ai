@@ -165,6 +165,54 @@ const migrations = [
       `);
     },
   },
+  {
+    version: 8,
+    name: 'project-instructions-and-material-files',
+    up(database) {
+      database.exec(`
+        ALTER TABLE projects
+          ADD COLUMN instructions TEXT NOT NULL DEFAULT '' CHECK(length(instructions) <= 16000);
+        ALTER TABLE projects
+          ADD COLUMN instructions_version INTEGER NOT NULL DEFAULT 1 CHECK(instructions_version >= 1);
+
+        CREATE TABLE IF NOT EXISTS project_files (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          original_name TEXT NOT NULL CHECK(length(original_name) BETWEEN 1 AND 180),
+          extension TEXT NOT NULL CHECK(extension IN ('.txt','.md','.csv','.json')),
+          mime_type TEXT NOT NULL,
+          size_bytes INTEGER NOT NULL CHECK(size_bytes BETWEEN 1 AND 2097152),
+          sha256 TEXT NOT NULL CHECK(length(sha256) = 64),
+          content BLOB NOT NULL,
+          extracted_text TEXT NOT NULL,
+          include_in_context INTEGER NOT NULL DEFAULT 0 CHECK(include_in_context IN (0,1)),
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(project_id,sha256)
+        );
+        CREATE INDEX IF NOT EXISTS idx_project_files_project_created
+          ON project_files(project_id,created_at DESC,id DESC);
+
+        CREATE TRIGGER IF NOT EXISTS project_files_owner_insert
+        BEFORE INSERT ON project_files
+        WHEN NOT EXISTS (
+          SELECT 1 FROM projects WHERE id=NEW.project_id AND user_id=NEW.user_id
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'project_file_owner_mismatch');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS project_files_owner_update
+        BEFORE UPDATE OF project_id,user_id ON project_files
+        WHEN NOT EXISTS (
+          SELECT 1 FROM projects WHERE id=NEW.project_id AND user_id=NEW.user_id
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'project_file_owner_mismatch');
+        END;
+      `);
+    },
+  },
 
 ];
 

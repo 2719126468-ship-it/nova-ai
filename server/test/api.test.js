@@ -75,6 +75,115 @@ test('authenticated users can create, update and delete their own projects', asy
   await agent.get('/api/projects/' + id).set(originHeaders).expect(404);
 });
 
+test('project context instructions and files enforce owner isolation, versioning, validation and opt-in', async () => {
+  const owner = request.agent(app);
+  const other = request.agent(app);
+  await owner.post('/api/v1/auth/register').set(originHeaders).send({
+    email: 'project-files-owner@example.com',
+    name: 'Project File Owner',
+    password: 'project-files-owner-password-strong',
+  }).expect(201);
+  await other.post('/api/v1/auth/register').set(originHeaders).send({
+    email: 'project-files-other@example.com',
+    name: 'Other Project User',
+    password: 'project-files-other-password-strong',
+  }).expect(201);
+
+  const ownProject = await owner.post('/api/v1/projects').set(originHeaders)
+    .send({ title: 'Context project' }).expect(201);
+  const foreignProject = await other.post('/api/v1/projects').set(originHeaders)
+    .send({ title: 'Foreign project' }).expect(201);
+  const projectId = ownProject.body.project.id;
+
+  const context = await owner.get('/api/v1/projects/' + projectId + '/context').expect(200);
+  assert.equal(context.body.project.instructions, '');
+  assert.equal(context.body.project.instructionsVersion, 1);
+  assert.deepEqual(context.body.files, []);
+
+  const savedInstructions = await owner.put('/api/v1/projects/' + projectId + '/context')
+    .set(originHeaders).send({ instructions: 'Prefer concise technical answers.', expectedVersion: 1 }).expect(200);
+  assert.equal(savedInstructions.body.project.instructionsVersion, 2);
+  assert.equal(savedInstructions.body.project.instructions, 'Prefer concise technical answers.');
+  await owner.put('/api/v1/projects/' + projectId + '/context').set(originHeaders)
+    .send({ instructions: 'A stale edit', expectedVersion: 1 }).expect(409);
+  await owner.put('/api/v1/projects/' + projectId + '/context').set(originHeaders)
+    .send({ instructions: 'x'.repeat(16001), expectedVersion: 2 }).expect(400);
+  await owner.get('/api/v1/projects/' + foreignProject.body.project.id + '/context').expect(404);
+
+  const markdown = Buffer.from('# Project reference\nOnly include this after the owner opts in.', 'utf8');
+  const uploaded = await owner.post('/api/v1/projects/' + projectId + '/files')
+    .set(originHeaders).set('Content-Type', 'application/octet-stream')
+    .set('X-File-Name', encodeURIComponent('project-notes.md')).send(markdown).expect(201);
+  const fileId = uploaded.body.file.id;
+  assert.equal(uploaded.body.file.includeInContext, false);
+  assert.equal(uploaded.body.file.sizeBytes, markdown.length);
+  await owner.post('/api/v1/projects/' + projectId + '/files')
+    .set(originHeaders).set('Content-Type', 'application/octet-stream')
+    .set('X-File-Name', encodeURIComponent('duplicate.md')).send(markdown).expect(409);
+  await owner.post('/api/v1/projects/' + projectId + '/files')
+    .set(originHeaders).set('Content-Type', 'application/octet-stream')
+    .set('X-File-Name', encodeURIComponent('unsafe.pdf')).send(Buffer.from('%PDF-1.7')).expect(415);
+  await owner.post('/api/v1/projects/' + projectId + '/files')
+    .set(originHeaders).set('Content-Type', 'application/octet-stream')
+    .set('X-File-Name', encodeURIComponent('bad.json')).send(Buffer.from('{ invalid }')).expect(400);
+  await owner.post('/api/v1/projects/' + projectId + '/files')
+    .set(originHeaders).set('Content-Type', 'application/octet-stream')
+    .set('X-File-Name', encodeURIComponent('bad-encoding.txt')).send(Buffer.from([0xff, 0xfe])).expect(415);
+
+  const listed = await owner.get('/api/v1/projects/' + projectId + '/files').expect(200);
+  assert.equal(listed.body.files.length, 1);
+  assert.equal(listed.body.files[0].includeInContext, false);
+  assert.equal(Object.hasOwn(listed.body.files[0], 'content'), false);
+  const included = await owner.patch('/api/v1/projects/' + projectId + '/files/' + fileId)
+    .set(originHeaders).send({ includeInContext: true }).expect(200);
+  assert.equal(included.body.files[0].includeInContext, true);
+  const stored = db.prepare('SELECT extracted_text,include_in_context FROM project_files WHERE id=?').get(fileId);
+  assert.equal(stored.extracted_text, markdown.toString('utf8'));
+  assert.equal(stored.include_in_context, 1);
+
+  const contextConversation = await owner.post('/api/v1/conversations').set(originHeaders)
+    .send({ title: 'Project context integration' }).expect(201);
+  const ownerId = db.prepare('SELECT id FROM users WHERE email=?').get('project-files-owner@example.com').id;
+  db.prepare('INSERT INTO project_conversations(project_id,conversation_id,user_id) VALUES(?,?,?)')
+    .run(projectId, contextConversation.body.conversation.id, ownerId);
+  const { readProjectPromptContext } = await import('../src/routes/conversations.js');
+  const includedContext = readProjectPromptContext(contextConversation.body.conversation.id, ownerId);
+  const otherId = db.prepare('SELECT id FROM users WHERE email=?').get('project-files-other@example.com').id;
+  assert.equal(readProjectPromptContext(contextConversation.body.conversation.id, otherId).message, null);
+  const unlinkedConversation = await owner.post('/api/v1/conversations').set(originHeaders)
+    .send({ title: 'Unlinked conversation' }).expect(201);
+  assert.equal(readProjectPromptContext(unlinkedConversation.body.conversation.id, ownerId).message, null);
+  assert.ok(includedContext.message.content.includes('Prefer concise technical answers.'));
+  assert.ok(includedContext.message.content.includes('Selected file: project-notes.md'));
+  assert.ok(includedContext.message.content.includes('Only include this after the owner opts in.'));
+  assert.equal(includedContext.filesIncluded, 1);
+
+  await owner.patch('/api/v1/projects/' + projectId + '/files/' + fileId)
+    .set(originHeaders).send({ includeInContext: false }).expect(200);
+  const instructionsOnlyContext = readProjectPromptContext(contextConversation.body.conversation.id, ownerId);
+  assert.ok(instructionsOnlyContext.message.content.includes('Prefer concise technical answers.'));
+  assert.equal(instructionsOnlyContext.message.content.includes('Selected file: project-notes.md'), false);
+  assert.equal(instructionsOnlyContext.filesIncluded, 0);
+
+  const downloaded = await owner.get('/api/v1/projects/' + projectId + '/files/' + fileId + '/download')
+    .buffer(true).parse((incoming, callback) => {
+      const chunks = [];
+      incoming.on('data', (chunk) => chunks.push(chunk));
+      incoming.on('end', () => callback(null, Buffer.concat(chunks)));
+      incoming.on('error', callback);
+    }).expect(200);
+  assert.equal(downloaded.body.toString('utf8'), markdown.toString('utf8'));
+  await other.get('/api/v1/projects/' + projectId + '/files').expect(404);
+  await other.get('/api/v1/projects/' + projectId + '/files/' + fileId + '/download').expect(404);
+  await other.delete('/api/v1/projects/' + projectId + '/files/' + fileId).set(originHeaders).expect(404);
+  await owner.post('/api/v1/projects/' + foreignProject.body.project.id + '/files')
+    .set(originHeaders).set('Content-Type', 'application/octet-stream')
+    .set('X-File-Name', encodeURIComponent('cross-owner.md')).send(markdown).expect(404);
+
+  await owner.delete('/api/v1/projects/' + projectId).set(originHeaders).expect(200);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM project_files WHERE project_id=?').get(projectId).count, 0);
+});
+
 test('documents API enforces ownership, project isolation, validation, and optimistic concurrency', async () => {
   const owner = request.agent(app);
   const other = request.agent(app);
@@ -204,7 +313,7 @@ test('database migrations add message lifecycle fields and are idempotent', () =
   assert.ok(columns.has('status'));
   assert.ok(columns.has('error_code'));
   const versions = db.prepare('SELECT version FROM schema_migrations ORDER BY version').all();
-  assert.deepEqual(versions.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7]);
+  assert.deepEqual(versions.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8]);
   const versionColumns = new Set(db.prepare('PRAGMA table_info(message_versions)').all().map((column) => column.name));
   assert.ok(versionColumns.has('message_id'));
   assert.ok(versionColumns.has('content'));
@@ -236,6 +345,18 @@ test('database migrations add message lifecycle fields and are idempotent', () =
   const documentTriggers = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='documents'").all().map((row) => row.name));
   assert.ok(documentTriggers.has('documents_project_owner_insert'));
   assert.ok(documentTriggers.has('documents_project_owner_update'));
+  const projectColumns = new Set(db.prepare('PRAGMA table_info(projects)').all().map((column) => column.name));
+  assert.ok(projectColumns.has('instructions'));
+  assert.ok(projectColumns.has('instructions_version'));
+  const projectFileColumns = new Set(db.prepare('PRAGMA table_info(project_files)').all().map((column) => column.name));
+  assert.ok(projectFileColumns.has('project_id'));
+  assert.ok(projectFileColumns.has('user_id'));
+  assert.ok(projectFileColumns.has('content'));
+  assert.ok(projectFileColumns.has('extracted_text'));
+  assert.ok(projectFileColumns.has('include_in_context'));
+  const projectFileTriggers = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='project_files'").all().map((row) => row.name));
+  assert.ok(projectFileTriggers.has('project_files_owner_insert'));
+  assert.ok(projectFileTriggers.has('project_files_owner_update'));
 });
 
 test('versioned models endpoint does not claim an unconfigured model is connected', async () => {
@@ -1692,6 +1813,13 @@ test('account export includes owned work but excludes password and session crede
     content: '# Account document',
     projectId: project.body.project.id,
   }).expect(201);
+  await agent.put('/api/v1/projects/' + project.body.project.id + '/context').set(originHeaders)
+    .send({ instructions: 'Use the exported project instructions.', expectedVersion: 1 }).expect(200);
+  const exportedProjectFileBytes = Buffer.from('# Exported project file\n');
+  const exportedProjectFile = await agent.post('/api/v1/projects/' + project.body.project.id + '/files')
+    .set(originHeaders).set('Content-Type', 'application/octet-stream')
+    .set('X-File-Name', encodeURIComponent('exported-reference.md'))
+    .send(exportedProjectFileBytes).expect(201);
   const conversation = await agent.post('/api/v1/conversations').set(originHeaders)
     .send({ title: 'Export conversation' }).expect(201);
   const exportedUserMessage = db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)')
@@ -1714,7 +1842,12 @@ test('account export includes owned work but excludes password and session crede
   assert.equal(response.body.account.email, 'account-export@example.com');
   assert.equal(response.body.projects.length, 1);
   assert.equal(response.body.projects[0].content, 'project notes');
-  assert.equal(response.body.schemaVersion, 5);
+  assert.equal(response.body.schemaVersion, 6);
+  assert.equal(response.body.projects[0].instructions, 'Use the exported project instructions.');
+  assert.equal(response.body.projects[0].instructionsVersion, 2);
+  assert.equal(response.body.projectFiles.length, 1);
+  assert.equal(response.body.projectFiles[0].id, exportedProjectFile.body.file.id);
+  assert.equal(response.body.projectFiles[0].contentBase64, exportedProjectFileBytes.toString('base64'));
   assert.equal(response.body.documents.length, 1);
   assert.equal(response.body.documents[0].id, exportedDocument.body.document.id);
   assert.equal(response.body.documents[0].content, '# Account document');
@@ -1746,6 +1879,11 @@ test('account deletion requires password and email confirmation then cascades pr
   }).expect(201);
   const project = await agent.post('/api/v1/projects').set(originHeaders)
     .send({ title: 'Delete project', description: '', content: 'delete me' }).expect(201);
+  const deleteProjectFileBytes = Buffer.from('# Delete this project file');
+  const deletedProjectFile = await agent.post('/api/v1/projects/' + project.body.project.id + '/files')
+    .set(originHeaders).set('Content-Type', 'application/octet-stream')
+    .set('X-File-Name', encodeURIComponent('delete-this.md'))
+    .send(deleteProjectFileBytes).expect(201);
   const deletedDocument = await agent.post('/api/v1/documents').set(originHeaders).send({
     title: 'Document to delete',
     content: 'Private content',
@@ -1788,6 +1926,7 @@ test('account deletion requires password and email confirmation then cascades pr
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM projects WHERE user_id=?').get(user.id).count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM documents WHERE user_id=?').get(user.id).count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM documents WHERE id=?').get(deletedDocument.body.document.id).count, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM project_files WHERE id=?').get(deletedProjectFile.body.file.id).count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM conversations WHERE user_id=?').get(user.id).count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM messages WHERE conversation_id=?').get(conversationId).count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM message_versions WHERE message_id=?').get(deletedAssistantMessage.lastInsertRowid).count, 0);

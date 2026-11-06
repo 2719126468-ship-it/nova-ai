@@ -1,0 +1,61 @@
+.project-context-page { padding-bottom: 72px; }
+.project-context-list-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin:0 0 18px; }
+.project-context-list-heading h2 { margin:7px 0 0; font-size:21px; letter-spacing:-.6px; }
+.project-context-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.project-context-card { min-height:180px; display:flex; flex-direction:column; padding:17px; border:1px solid var(--line); background:var(--surface); color:var(--ink); transition:border-color .18s,transform .18s; }
+.project-context-card:hover { border-color:var(--accent); transform:translateY(-2px); }
+.project-context-card-icon { width:34px; height:34px; display:grid; place-items:center; color:var(--accent-dark); background:var(--accent-soft); }
+.project-context-card h3 { margin:15px 0 5px; font-size:13px; }
+.project-context-card p { margin:0; color:var(--muted); font-size:9px; line-height:1.7; }
+.project-context-card-open { display:flex; align-items:center; justify-content:flex-end; gap:5px; margin-top:auto; padding-top:12px; color:var(--accent-dark); font-size:9px; font-weight:600; }
+.project-context-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+.project-context-panel { max-width:980px; margin:0 auto 17px; padding:23px 25px; border:1px solid var(--line); background:var(--surface); }
+.project-context-panel-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.project-context-panel-heading h2 { margin:7px 0 0; font-size:18px; letter-spacing:-.4px; }
+.project-context-version { color:var(--subtle); font-size:8px; letter-spacing:1px; white-space:nowrap; }
+.project-context-help { max-width:760px; margin:12px 0 15px; color:var(--muted); font-size:9px; line-height:1.8; }
+.project-instructions-input { display:block; width:100%; min-height:190px; padding:13px 14px; border:1px solid var(--line-strong); outline:0; background:var(--surface-soft); color:var(--ink); font-family:inherit; font-size:11px; line-height:1.8; resize:vertical; }
+.project-instructions-input:focus { border-color:var(--accent); }
+.project-instructions-input::placeholder { color:var(--subtle); }
+.project-context-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:12px; color:var(--subtle); font-size:8px; }
+.project-context-actions .button { min-height:36px; font-size:9px; }
+.project-context-notice { display:flex; align-items:center; gap:7px; max-width:980px; margin:0 auto 13px; padding:10px 12px; border:1px solid var(--line); background:var(--surface-soft); color:var(--accent-dark); font-size:9px; }
+.project-context-conflict { max-width:980px; margin:0 auto 13px; padding:13px 15px; display:flex; align-items:center; justify-content:space-between; gap:14px; border:1px solid var(--line-strong); background:var(--surface-soft); }
+.project-context-conflict strong { font-size:10px; }
+.project-context-conflict p { margin:5px 0 0; color:var(--muted); font-size:9px; line-height:1.6; }
+.project-file-upload { display:flex; align-items:center; gap:12px; min-height:72px; padding:13px 15px; border:1px dashed var(--line-strong); background:var(--surface-soft); color:var(--accent-dark); cursor:pointer; }
+.project-file-upload:hover { border-color:var(--accent); }
+.project-file-upload.is-uploading { opacity:.65; cursor:wait; }
+.project-file-upload span { display:flex; flex-direction:column; gap:4px; }
+.project-file-upload strong { color:var(--ink); font-size:10px; }
+.project-file-upload small { color:var(--subtle); font-size:8px; }
+.project-file-upload input { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
+.project-file-usage { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 0 8px; color:var(--subtle); font-size:8px; }
+.project-file-list { border-top:1px solid var(--line); }
+.project-file-row { min-width:0; display:flex; align-items:center; gap:10px; padding:11px 0; border-bottom:1px solid var(--line); }
+.project-file-icon { width:30px; height:30px; display:grid; flex:0 0 auto; place-items:center; color:var(--accent-dark); background:var(--accent-soft); }
+.project-file-main { display:flex; flex:1 1 auto; min-width:0; flex-direction:column; gap:4px; }
+.project-file-main strong { overflow:hidden; color:var(--ink); font-size:9px; text-overflow:ellipsis; white-space:nowrap; }
+.project-file-main small { color:var(--subtle); font-size:8px; }
+.project-file-toggle { display:flex; align-items:center; gap:6px; flex:0 0 auto; color:var(--muted); font-size:8px; cursor:pointer; white-space:nowrap; }
+.project-file-toggle input { accent-color:var(--accent); }
+.project-file-action { width:30px; height:30px; display:grid; flex:0 0 auto; place-items:center; border:1px solid var(--line); background:transparent; color:var(--muted); cursor:pointer; }
+.project-file-action:hover { border-color:var(--accent); color:var(--accent-dark); }
+.project-file-action.is-danger:hover { border-color:#b85c5c; color:#b85c5c; }
+.project-context-security { max-width:980px; margin:16px auto 0; display:flex; gap:8px; color:var(--subtle); font-size:9px; line-height:1.7; }
+.project-context-security svg { flex:0 0 auto; color:var(--accent); }
+@media (max-width:850px) { .project-context-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:600px) {
+  .project-context-page { padding-top:44px; }
+  .project-context-grid { grid-template-columns:1fr; }
+  .project-context-card { min-height:145px; padding:14px; }
+  .project-context-panel { padding:18px 14px; }
+  .project-context-panel-heading h2 { font-size:16px; }
+  .project-instructions-input { min-height:165px; }
+  .project-context-actions { align-items:flex-end; }
+  .project-context-conflict { align-items:stretch; flex-direction:column; }
+  .project-file-row { gap:7px; flex-wrap:wrap; }
+  .project-file-main { flex-basis:calc(100% - 45px); }
+  .project-file-toggle { margin-left:37px; margin-right:auto; }
+  .project-file-action { width:28px; height:28px; }
+}

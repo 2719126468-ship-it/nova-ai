@@ -10,6 +10,7 @@ import { probeModel } from './services/model-health.js';
 import { requireAppRequest } from './middleware/security.js';
 import authRoutes from './routes/auth.js';
 import projectRoutes from './routes/projects.js';
+import projectContextRoutes from './routes/project-context.js';
 import documentRoutes from './routes/documents.js';
 import conversationRoutes from './routes/conversations.js';
 import researchRoutes from './routes/research.js';
@@ -58,7 +59,7 @@ export function createApp() {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'X-Requested-With', 'X-File-Name'],
   }));
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
@@ -130,6 +131,7 @@ export function createApp() {
   // /api/v1 is the canonical contract. /api remains as a compatibility alias.
   for (const prefix of ['/api/v1', '/api']) {
     app.use(prefix + '/auth', authRoutes);
+    app.use(prefix + '/projects', projectContextRoutes);
     app.use(prefix + '/projects', projectRoutes);
     app.use(prefix + '/documents', documentRoutes);
     app.use(prefix + '/conversations', conversationRoutes);
