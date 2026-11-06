@@ -1,45 +1,55 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import Shell from './components/Shell';
 import { AdminRoute, ProtectedRoute } from './components/ProtectedRoute';
-import Home from './pages/Home';
-import Products from './pages/Products';
-import Research from './pages/Research';
-import Article from './pages/Article';
-import Auth from './pages/Auth';
-import Chat from './pages/Chat';
-import { Studio, StudioEditor } from './pages/Studio';
-import Account from './pages/Account';
-import Models from './pages/Models';
-import Pricing from './pages/Pricing';
-import Developers from './pages/Developers';
-import Admin from './pages/Admin';
-import About, { NotFound } from './pages/About';
+
+const Home = lazy(() => import('./pages/Home'));
+const Products = lazy(() => import('./pages/Products'));
+const Research = lazy(() => import('./pages/Research'));
+const Article = lazy(() => import('./pages/Article'));
+const Auth = lazy(() => import('./pages/Auth'));
+const Chat = lazy(() => import('./pages/Chat'));
+const Studio = lazy(() => import('./pages/Studio').then((module) => ({ default: module.Studio })));
+const StudioEditor = lazy(() => import('./pages/Studio').then((module) => ({ default: module.StudioEditor })));
+const Account = lazy(() => import('./pages/Account'));
+const Models = lazy(() => import('./pages/Models'));
+const Pricing = lazy(() => import('./pages/Pricing'));
+const Developers = lazy(() => import('./pages/Developers'));
+const Admin = lazy(() => import('./pages/Admin'));
+const About = lazy(() => import('./pages/About'));
+const NotFound = lazy(() => import('./pages/About').then((module) => ({ default: module.NotFound })));
+
+function RouteLoading() {
+  return <div className="route-loading" role="status" aria-live="polite">正在加载页面…</div>;
+}
 
 export default function App() {
   return <BrowserRouter>
-    <Routes>
-      <Route element={<Shell />}>
-        <Route index element={<Home />} />
-        <Route path="products" element={<Products />} />
-        <Route path="research" element={<Research />} />
-        <Route path="research/:slug" element={<Article />} />
-        <Route path="models" element={<Models />} />
-        <Route path="pricing" element={<Pricing />} />
-        <Route path="developers" element={<Developers />} />
-        <Route path="about" element={<About />} />
-        <Route path="login" element={<Auth />} />
-        <Route path="register" element={<Auth />} />
-        <Route element={<ProtectedRoute />}>
-          <Route path="chat" element={<Chat />} />
-          <Route path="studio" element={<Studio />} />
-          <Route path="studio/:id" element={<StudioEditor />} />
-          <Route path="account" element={<Account />} />
+    <Suspense fallback={<RouteLoading />}>
+      <Routes>
+        <Route element={<Shell />}>
+          <Route index element={<Home />} />
+          <Route path="products" element={<Products />} />
+          <Route path="research" element={<Research />} />
+          <Route path="research/:slug" element={<Article />} />
+          <Route path="models" element={<Models />} />
+          <Route path="pricing" element={<Pricing />} />
+          <Route path="developers" element={<Developers />} />
+          <Route path="about" element={<About />} />
+          <Route path="login" element={<Auth />} />
+          <Route path="register" element={<Auth />} />
+          <Route element={<ProtectedRoute />}>
+            <Route path="chat" element={<Chat />} />
+            <Route path="studio" element={<Studio />} />
+            <Route path="studio/:id" element={<StudioEditor />} />
+            <Route path="account" element={<Account />} />
+          </Route>
+          <Route element={<AdminRoute />}>
+            <Route path="admin" element={<Admin />} />
+          </Route>
+          <Route path="*" element={<NotFound />} />
         </Route>
-        <Route element={<AdminRoute />}>
-          <Route path="admin" element={<Admin />} />
-        </Route>
-        <Route path="*" element={<NotFound />} />
-      </Route>
-    </Routes>
+      </Routes>
+    </Suspense>
   </BrowserRouter>;
 }

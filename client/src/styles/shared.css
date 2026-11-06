@@ -42,3 +42,5 @@
 .form-field input, .form-field textarea, .form-field select { width: 100%; padding: 13px 14px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 3px; color: var(--ink); outline: none; font-size: 12px; font-weight: 400; }
 .form-field input:focus, .form-field textarea:focus { border-color: var(--accent); }
 .form-field small { color: var(--muted); font-size: 10px; font-weight: 400; }
+
+.route-loading { min-height: 42vh; display: grid; place-items: center; padding: 24px; color: var(--muted); font-size: 12px; letter-spacing: .2px; }
