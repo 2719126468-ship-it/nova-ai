@@ -49,6 +49,21 @@ function findConversation(id, userId) {
   return db.prepare('SELECT * FROM conversations WHERE id=? AND user_id=?').get(id, userId);
 }
 
+function archiveMessageVersion(messageId, content, status, errorCode, source) {
+  if (!['complete', 'failed', 'cancelled'].includes(status)) return;
+  db.prepare(
+    'INSERT INTO message_versions (message_id,content,status,error_code,source) VALUES (?,?,?,?,?)',
+  ).run(messageId, content || '', status, errorCode || null, source);
+}
+
+function copyMessageVersions(sourceMessageId, destinationMessageId) {
+  db.prepare(`
+    INSERT INTO message_versions (message_id,content,status,error_code,source,created_at)
+    SELECT ?,content,status,error_code,source,created_at
+    FROM message_versions WHERE message_id=? ORDER BY id
+  `).run(destinationMessageId, sourceMessageId);
+}
+
 function sendSse(res, event, payload) {
   if (res.writableEnded || res.destroyed) return;
   res.write('event: ' + event + '\n');
@@ -140,7 +155,9 @@ async function streamAssistantResponse(res, prompt, pending, generationKey, hook
       db.prepare("UPDATE messages SET content=?,status='complete',error_code=NULL WHERE id=?")
         .run(content, pending.assistantMessageId);
       assistantMessage = db.prepare(
-        'SELECT id,role,content,status,error_code,created_at FROM messages WHERE id=?',
+        'SELECT id,role,content,status,error_code,created_at,
+        (SELECT COUNT(*) FROM message_versions v WHERE v.message_id=messages.id) AS version_count
+      FROM messages WHERE id=?',
       ).get(pending.assistantMessageId);
     }
     finishUsageRecord(hooks.usageRecord, { status: 'succeeded', usage: providerUsage });
@@ -202,9 +219,90 @@ router.get('/:id', (req, res) => {
   const conversation = findConversation(Number(req.params.id), req.user.id);
   if (!conversation) return res.status(404).json({ error: 'NOT_FOUND', message: '对话不存在。' });
   const messages = db.prepare(
-    'SELECT id,role,content,status,error_code,created_at FROM messages WHERE conversation_id=? ORDER BY id',
+    'SELECT m.id,m.role,m.content,m.status,m.error_code,m.created_at,
+      (SELECT COUNT(*) FROM message_versions v WHERE v.message_id=m.id) AS version_count
+    FROM messages m WHERE m.conversation_id=? ORDER BY m.id',
   ).all(conversation.id);
   res.json({ conversation, messages });
+});
+
+router.get('/:id/messages/:messageId/versions', (req, res) => {
+  if (!isPositiveId(req.params.id) || !isPositiveId(req.params.messageId)) {
+    return res.status(400).json({ error: 'INVALID_ID', message: '对话或消息编号无效。' });
+  }
+  const conversationId = Number(req.params.id);
+  const messageId = Number(req.params.messageId);
+  if (!findConversation(conversationId, req.user.id)) {
+    return res.status(404).json({ error: 'NOT_FOUND', message: '对话不存在。' });
+  }
+  const message = db.prepare(
+    "SELECT id FROM messages WHERE id=? AND conversation_id=? AND role='assistant'",
+  ).get(messageId, conversationId);
+  if (!message) return res.status(404).json({ error: 'MESSAGE_NOT_FOUND', message: '回答不存在。' });
+  const versions = db.prepare(
+    'SELECT id,content,status,error_code,source,created_at FROM message_versions WHERE message_id=? ORDER BY id DESC',
+  ).all(messageId);
+  res.json({ versions });
+});
+
+router.post('/:id/messages/:messageId/restore', (req, res, next) => {
+  try {
+    if (!isPositiveId(req.params.id) || !isPositiveId(req.params.messageId)) {
+      return res.status(400).json({ error: 'INVALID_ID', message: '对话或消息编号无效。' });
+    }
+    const versionId = Number(req.body?.versionId);
+    if (!Number.isSafeInteger(versionId) || versionId < 1) {
+      return res.status(400).json({ error: 'VALIDATION_ERROR', message: '请选择有效的回答版本。' });
+    }
+
+    const conversationId = Number(req.params.id);
+    const messageId = Number(req.params.messageId);
+    const conversation = findConversation(conversationId, req.user.id);
+    if (!conversation) return res.status(404).json({ error: 'NOT_FOUND', message: '对话不存在。' });
+
+    const generationKey = String(req.user.id);
+    if (activeGenerations.has(generationKey)) {
+      return res.status(409).json({ error: 'AI_GENERATION_IN_PROGRESS', message: '请等待当前生成完成后再恢复回答版本。' });
+    }
+
+    const message = db.prepare(
+      "SELECT id,role,content,status,error_code FROM messages WHERE id=? AND conversation_id=? AND role='assistant'",
+    ).get(messageId, conversationId);
+    if (!message) return res.status(404).json({ error: 'MESSAGE_NOT_FOUND', message: '回答不存在。' });
+    if (message.status === 'streaming') {
+      return res.status(409).json({ error: 'MESSAGE_STILL_STREAMING', message: '生成尚未完成，暂时无法恢复版本。' });
+    }
+
+    const version = db.prepare(
+      'SELECT id,content,status,error_code FROM message_versions WHERE id=? AND message_id=?',
+    ).get(versionId, messageId);
+    if (!version) return res.status(404).json({ error: 'VERSION_NOT_FOUND', message: '回答版本不存在。' });
+
+    const result = db.transaction(() => {
+      archiveMessageVersion(message.id, message.content, message.status, message.error_code, 'restore');
+      db.prepare(
+        'UPDATE messages SET content=?,status=?,error_code=? WHERE id=? AND conversation_id=? AND role=\'assistant\'',
+      ).run(version.content, version.status, version.error_code, messageId, conversationId);
+      // The selected historical version becomes current; the former current answer
+      // is now the new restorable version, so the history count stays stable.
+      db.prepare('DELETE FROM message_versions WHERE id=? AND message_id=?').run(versionId, messageId);
+      db.prepare('UPDATE conversations SET updated_at=CURRENT_TIMESTAMP WHERE id=?').run(conversationId);
+
+      const restoredMessage = db.prepare(`
+        SELECT m.id,m.role,m.content,m.status,m.error_code,m.created_at,
+          (SELECT COUNT(*) FROM message_versions v WHERE v.message_id=m.id) AS version_count
+        FROM messages m WHERE m.id=? AND m.conversation_id=?
+      `).get(messageId, conversationId);
+      const versions = db.prepare(
+        'SELECT id,content,status,error_code,source,created_at FROM message_versions WHERE message_id=? ORDER BY id DESC',
+      ).all(messageId);
+      return { message: restoredMessage, versions };
+    })();
+
+    return res.json(result);
+  } catch (error) {
+    return next(error);
+  }
 });
 
 router.patch('/:id', (req, res) => {
@@ -439,6 +537,20 @@ router.put('/:id/messages/:messageId/stream', generationLimiter, async (req, res
       throw error;
     }
 
+    const previousAssistant = db.prepare(
+      "SELECT id,content,status,error_code FROM messages WHERE conversation_id=? AND id>? AND id<? AND role='assistant' ORDER BY id LIMIT 1",
+    ).get(conversationId, messageId, pending.assistantMessageId);
+    if (previousAssistant) {
+      archiveMessageVersion(
+        pending.assistantMessageId,
+        previousAssistant.content,
+        previousAssistant.status,
+        previousAssistant.error_code,
+        'edit_regeneration',
+      );
+      copyMessageVersions(previousAssistant.id, pending.assistantMessageId);
+    }
+
     db.prepare('DELETE FROM messages WHERE conversation_id=? AND id>? AND id<>?')
       .run(conversationId, messageId, pending.assistantMessageId);
 
@@ -454,7 +566,9 @@ router.put('/:id/messages/:messageId/stream', generationLimiter, async (req, res
     db.prepare("UPDATE messages SET content=?,status='complete',error_code=NULL WHERE id=? AND conversation_id=?")
       .run(assistantContent, pending.assistantMessageId, conversationId);
     return db.prepare(
-      'SELECT id,role,content,status,error_code,created_at FROM messages WHERE id=?',
+      'SELECT id,role,content,status,error_code,created_at,
+        (SELECT COUNT(*) FROM message_versions v WHERE v.message_id=messages.id) AS version_count
+      FROM messages WHERE id=?',
     ).get(pending.assistantMessageId);
   });
 
@@ -496,7 +610,7 @@ router.post('/:id/messages/:messageId/retry/stream', generationLimiter, async (r
   }
 
   const target = db.prepare(
-    "SELECT id,role,content,status FROM messages WHERE id=? AND conversation_id=? AND role='assistant'",
+    "SELECT id,role,content,status,error_code FROM messages WHERE id=? AND conversation_id=? AND role='assistant'",
   ).get(messageId, conversationId);
   if (!target || !['failed', 'cancelled'].includes(target.status)) {
     return res.status(404).json({ error: 'MESSAGE_NOT_RETRYABLE', message: '只有失败或已停止的回答可以重试。' });
@@ -549,6 +663,14 @@ router.post('/:id/messages/:messageId/retry/stream', generationLimiter, async (r
   }
 
   const commitRetry = db.transaction((assistantContent) => {
+    archiveMessageVersion(
+      pending.assistantMessageId,
+      target.content,
+      target.status,
+      target.error_code,
+      'retry',
+    );
+    copyMessageVersions(target.id, pending.assistantMessageId);
     db.prepare('DELETE FROM messages WHERE conversation_id=? AND id>=? AND id<>?')
       .run(conversationId, messageId, pending.assistantMessageId);
     db.prepare("UPDATE messages SET content=?,status='complete',error_code=NULL WHERE id=? AND conversation_id=?")
@@ -556,7 +678,9 @@ router.post('/:id/messages/:messageId/retry/stream', generationLimiter, async (r
     db.prepare('UPDATE conversations SET updated_at=CURRENT_TIMESTAMP WHERE id=?')
       .run(conversationId);
     return db.prepare(
-      'SELECT id,role,content,status,error_code,created_at FROM messages WHERE id=?',
+      'SELECT id,role,content,status,error_code,created_at,
+        (SELECT COUNT(*) FROM message_versions v WHERE v.message_id=messages.id) AS version_count
+      FROM messages WHERE id=?',
     ).get(pending.assistantMessageId);
   });
 
