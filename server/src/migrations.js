@@ -107,7 +107,7 @@ const migrations = [
       `);
     },
   },
-,{
+  {
     version: 6,
     name: 'provider-reported-model-context-windows',
     up(database) {
