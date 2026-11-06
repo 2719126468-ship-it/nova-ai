@@ -130,6 +130,7 @@ export function DocumentEditor() {
   const versionRef = useRef(0);
   const savedSnapshotRef = useRef(EMPTY_SNAPSHOT);
   const savingRef = useRef(false);
+  const failedSnapshotRef = useRef(null);
   const currentDraft = { title, content, projectId: projectId ? Number(projectId) : null };
   const dirty = Boolean(document) && makeSnapshot(currentDraft) !== savedSnapshotRef.current;
 
@@ -196,6 +197,7 @@ export function DocumentEditor() {
       versionRef.current = saved.version;
       setVersion(saved.version);
       savedSnapshotRef.current = makeSnapshot(saved);
+      failedSnapshotRef.current = null;
       setDocument(saved);
       setLastSavedAt(saved.updatedAt);
       setSaveStatus('saved');
@@ -204,6 +206,7 @@ export function DocumentEditor() {
         setConflict({ currentVersion: cause.currentVersion, message: cause.message });
         setSaveStatus('conflict');
       } else {
+        failedSnapshotRef.current = makeSnapshot(target);
         setError(cause.message);
         setSaveStatus('error');
       }
@@ -214,16 +217,21 @@ export function DocumentEditor() {
   }, [conflict, numericId]);
 
   useEffect(() => {
-    if (!document || loading || !dirty || saving || conflict || saveStatus === 'error' || !title.trim()) return undefined;
+    if (!document || loading || !dirty || saving || conflict) return undefined;
+    if (!title.trim()) {
+      setSaveStatus('error');
+      setError('文档标题不能为空，填写标题后即可自动保存。');
+      return undefined;
+    }
+    const target = {
+      title: title.trim(),
+      content,
+      projectId: projectId ? Number(projectId) : null,
+    };
+    if (failedSnapshotRef.current === makeSnapshot(target)) return undefined;
+    setError('');
     setSaveStatus('pending');
-    const timer = window.setTimeout(() => {
-      const target = {
-        title: title.trim(),
-        content,
-        projectId: projectId ? Number(projectId) : null,
-      };
-      persist(target);
-    }, 850);
+    const timer = window.setTimeout(() => persist(target), 850);
     return () => window.clearTimeout(timer);
   }, [document, loading, dirty, title, content, projectId, saving, conflict, saveStatus, retryKey, persist]);
 
@@ -330,7 +338,7 @@ export function DocumentEditor() {
       <div className="document-editor-footer">
         <span>{content.length.toLocaleString()} / 200,000 字符{dirtyWarning ? ' · 待同步' : ''}</span>
         <span><SplitSquareVertical size={13} /> Markdown</span>
-        {saveStatus === 'error' && <button type="button" onClick={() => setRetryKey((value) => value + 1)}>重试保存</button>}
+        {saveStatus === 'error' && <button type="button" onClick={() => { failedSnapshotRef.current = null; setSaveStatus('pending'); setRetryKey((value) => value + 1); }}>重试保存</button>}
         {saveStatus === 'pending' && <span>停止输入后自动保存</span>}
         {saveStatus === 'saved' && <span>所有更改已保存</span>}
       </div>
