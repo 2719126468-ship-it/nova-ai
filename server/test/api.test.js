@@ -277,3 +277,65 @@ test('Zod 4 validation errors retain structured field details', async () => {
   assert.ok(Array.isArray(response.body.details.fieldErrors.password));
   assert.ok(Array.isArray(response.body.details.fieldErrors.name));
 });
+
+
+test('stream endpoint enforces one active generation per authenticated user', async () => {
+  let signalStarted;
+  const providerStarted = new Promise((resolve) => { signalStarted = resolve; });
+  providerServer = createServer((incoming, outgoing) => {
+    incoming.resume();
+    incoming.on('end', () => {
+      signalStarted();
+      outgoing.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      setTimeout(() => {
+        outgoing.end('data: {"choices":[{"delta":{"content":"Concurrent test complete"}}]}\n\ndata: [DONE]\n\n');
+      }, 150);
+    });
+  });
+  await new Promise((resolve) => providerServer.listen(0, '127.0.0.1', resolve));
+  const previous = {
+    aiBaseUrl: config.aiBaseUrl,
+    aiApiKey: config.aiApiKey,
+    aiModel: config.aiModel,
+  };
+  config.aiBaseUrl = 'http://127.0.0.1:' + providerServer.address().port + '/v1';
+  config.aiApiKey = 'test-only-secret-key';
+  config.aiModel = 'mock-concurrency-model';
+
+  try {
+    const agent = request.agent(app);
+    await agent.post('/api/v1/auth/login').set(originHeaders)
+      .send({ email: 'test@example.com', password: 'a-strong-test-password' }).expect(200);
+    const created = await agent.post('/api/v1/conversations').set(originHeaders)
+      .send({ title: 'Concurrency test' }).expect(201);
+    const url = '/api/v1/conversations/' + created.body.conversation.id + '/messages/stream';
+    const firstPromise = (async () => agent.post(url).set(originHeaders)
+      .send({ content: 'First generation' })
+      .buffer(true)
+      .parse((incoming, callback) => {
+        let body = '';
+        incoming.setEncoding('utf8');
+        incoming.on('data', (chunk) => { body += chunk; });
+        incoming.on('end', () => callback(null, body));
+        incoming.on('error', callback);
+      }))();
+    await providerStarted;
+    const second = await agent.post(url.replace('/messages/stream', '/messages')).set(originHeaders)
+      .send({ content: 'Second generation' }).expect(409);
+    assert.equal(second.body.error, 'AI_GENERATION_IN_PROGRESS');
+
+    const first = await firstPromise;
+    assert.equal(first.status, 200);
+    assert.match(first.body, /Concurrent test complete/);
+    const saved = db.prepare(
+      "SELECT COUNT(*) AS count FROM messages WHERE conversation_id=? AND role='user'",
+    ).get(created.body.conversation.id);
+    assert.equal(saved.count, 1);
+  } finally {
+    config.aiBaseUrl = previous.aiBaseUrl;
+    config.aiApiKey = previous.aiApiKey;
+    config.aiModel = previous.aiModel;
+    await new Promise((resolve) => providerServer.close(resolve));
+    providerServer = null;
+  }
+});

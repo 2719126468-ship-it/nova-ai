@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -11,6 +12,15 @@ import {
 import { isPositiveId } from '../utils.js';
 
 const router = Router();
+const activeGenerations = new Set();
+const generationLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 6,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => 'user:' + req.user.id,
+  message: { error: 'AI_RATE_LIMITED', message: '发送过于频繁，请稍后再试。' },
+});
 const messageSchema = z.object({
   content: z.string().trim().min(1).max(20000),
 });
@@ -84,7 +94,7 @@ router.patch('/:id', (req, res) => {
   res.json({ conversation: findConversation(Number(req.params.id), req.user.id) });
 });
 
-router.post('/:id/messages', async (req, res, next) => {
+router.post('/:id/messages', generationLimiter, async (req, res, next) => {
   try {
     if (!isPositiveId(req.params.id)) {
       return res.status(400).json({ error: 'INVALID_ID', message: '对话编号无效。' });
@@ -98,27 +108,36 @@ router.post('/:id/messages', async (req, res, next) => {
       return res.status(404).json({ error: 'NOT_FOUND', message: '对话不存在。' });
     }
     if (!config.aiConfigured) throw new ProviderNotConfiguredError();
+    const generationKey = String(req.user.id);
+    if (activeGenerations.has(generationKey)) {
+      return res.status(409).json({ error: 'AI_GENERATION_IN_PROGRESS', message: '当前账号已有生成任务，请等待完成或停止后重试。' });
+    }
+    activeGenerations.add(generationKey);
 
-    const prompt = [...readRecentHistory(conversationId), { role: 'user', content: parsed.data.content }];
-    const reply = await createAssistantReply(prompt);
-    const insert = db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)');
-    const save = db.transaction(() => {
-      const userResult = insert.run(conversationId, 'user', parsed.data.content);
-      const assistantResult = insert.run(conversationId, 'assistant', reply);
-      db.prepare("UPDATE conversations SET title=CASE WHEN title='新对话' THEN ? ELSE title END,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-        .run(parsed.data.content.slice(0, 42), conversationId);
-      return {
-        userMessage: db.prepare('SELECT id,role,content,status,created_at FROM messages WHERE id=?').get(userResult.lastInsertRowid),
-        assistantMessage: db.prepare('SELECT id,role,content,status,created_at FROM messages WHERE id=?').get(assistantResult.lastInsertRowid),
-      };
-    });
-    res.status(201).json(save());
+    try {
+      const prompt = [...readRecentHistory(conversationId), { role: 'user', content: parsed.data.content }];
+      const reply = await createAssistantReply(prompt);
+      const insert = db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)');
+      const save = db.transaction(() => {
+        const userResult = insert.run(conversationId, 'user', parsed.data.content);
+        const assistantResult = insert.run(conversationId, 'assistant', reply);
+        db.prepare("UPDATE conversations SET title=CASE WHEN title='新对话' THEN ? ELSE title END,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+          .run(parsed.data.content.slice(0, 42), conversationId);
+        return {
+          userMessage: db.prepare('SELECT id,role,content,status,created_at FROM messages WHERE id=?').get(userResult.lastInsertRowid),
+          assistantMessage: db.prepare('SELECT id,role,content,status,created_at FROM messages WHERE id=?').get(assistantResult.lastInsertRowid),
+        };
+      });
+      res.status(201).json(save());
+    } finally {
+      activeGenerations.delete(generationKey);
+    }
   } catch (error) {
     next(error);
   }
 });
 
-router.post('/:id/messages/stream', async (req, res, next) => {
+router.post('/:id/messages/stream', generationLimiter, async (req, res, next) => {
   if (!isPositiveId(req.params.id)) {
     return res.status(400).json({ error: 'INVALID_ID', message: '对话编号无效。' });
   }
@@ -135,6 +154,12 @@ router.post('/:id/messages/stream', async (req, res, next) => {
   if (parsed.data.modelId && parsed.data.modelId !== config.aiModel) {
     return res.status(404).json({ error: 'MODEL_NOT_FOUND', message: '所选模型未在服务端启用。' });
   }
+
+  const generationKey = String(req.user.id);
+  if (activeGenerations.has(generationKey)) {
+    return res.status(409).json({ error: 'AI_GENERATION_IN_PROGRESS', message: '当前账号已有生成任务，请等待完成或停止后重试。' });
+  }
+  activeGenerations.add(generationKey);
 
   const prompt = [...readRecentHistory(conversationId), { role: 'user', content: parsed.data.content }];
   const insert = db.prepare('INSERT INTO messages(conversation_id,role,content,status) VALUES(?,?,?,?)');
@@ -153,6 +178,7 @@ router.post('/:id/messages/stream', async (req, res, next) => {
   try {
     pending = createPendingMessages();
   } catch (error) {
+    activeGenerations.delete(generationKey);
     return next(error);
   }
 
@@ -214,6 +240,7 @@ router.post('/:id/messages/stream', async (req, res, next) => {
       res.end();
     }
   } finally {
+    activeGenerations.delete(generationKey);
     res.removeListener('close', onClose);
   }
 });

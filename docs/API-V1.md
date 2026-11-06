@@ -117,6 +117,12 @@ Clients should use AbortController to cancel the streaming fetch when the user p
 
 Provider error messages are normalized rather than returning raw upstream response bodies. API credentials remain server-side.
 
+## Generation limits
+
+- Each authenticated user is limited to 6 generation requests per minute across the streaming and legacy message endpoints.
+- The streaming endpoint allows one active generation per user at a time. A second concurrent request returns HTTP 409 AI_GENERATION_IN_PROGRESS.
+- These guards use the process-local in-memory store, appropriate for the current single-instance SQLite deployment. Multi-instance deployment requires a shared limiter/lock store before horizontal scaling.
+
 ## Current limitations
 
 - One OpenAI-compatible provider and one configured model are supported.
