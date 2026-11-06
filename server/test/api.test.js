@@ -216,6 +216,15 @@ test('database migrations add message lifecycle fields and are idempotent', () =
   assert.ok(contextColumns.has('context_tokens'));
   assert.ok(contextColumns.has('source'));
   assert.ok(contextColumns.has('checked_at'));
+  const documentColumns = new Set(db.prepare('PRAGMA table_info(documents)').all().map((column) => column.name));
+  assert.ok(documentColumns.has('user_id'));
+  assert.ok(documentColumns.has('project_id'));
+  assert.ok(documentColumns.has('title'));
+  assert.ok(documentColumns.has('content'));
+  assert.ok(documentColumns.has('version'));
+  const documentTriggers = new Set(db.prepare(\"SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='documents'\").all().map((row) => row.name));
+  assert.ok(documentTriggers.has('documents_project_owner_insert'));
+  assert.ok(documentTriggers.has('documents_project_owner_update'));
 });
 
 test('versioned models endpoint does not claim an unconfigured model is connected', async () => {
