@@ -59,7 +59,7 @@ export function createApp() {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'X-Requested-With', 'X-File-Name'],
   }));
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
