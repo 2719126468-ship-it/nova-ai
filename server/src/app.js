@@ -28,7 +28,12 @@ export function createApp() {
 
   app.get('/api/health', (req, res) => res.json({
     status: 'ok', service: 'NOVA API', version: '0.1.0',
-    ai: { configured: config.aiConfigured, provider: config.aiConfigured ? 'openai-compatible' : null, model: config.aiConfigured ? config.aiModel : null },
+    ai: {
+      configured: config.aiConfigured,
+      status: config.aiConfigured ? 'configured_unverified' : 'not_configured',
+      provider: config.aiConfigured ? 'openai-compatible' : null,
+      model: config.aiConfigured ? config.aiModel : null,
+    },
     timestamp: new Date().toISOString(),
   }));
   app.use('/api/auth', authRoutes);
@@ -36,7 +41,29 @@ export function createApp() {
   app.use('/api/conversations', conversationRoutes);
   app.use('/api/research', researchRoutes);
   app.use('/api/admin', adminRoutes);
-  app.get('/api/models', (req, res) => res.json({ models: config.aiConfigured ? [{ id: config.aiModel, name: config.aiModel, provider: 'Configured provider', available: true }] : [], configured: config.aiConfigured }));
+  app.get('/api/models', (req, res) => {
+    const configured = config.aiConfigured;
+    const models = configured ? [{
+      id: config.aiModel,
+      name: config.aiModel,
+      provider: 'OpenAI-compatible',
+      enabled: true,
+      status: 'configured_unverified',
+      capabilities: { text: true, streaming: true },
+      contextLimit: null,
+    }] : [];
+    res.json({
+      models,
+      configured,
+      provider: {
+        id: 'openai-compatible',
+        name: 'OpenAI-compatible provider',
+        configured,
+        health: 'unknown',
+        status: configured ? 'configured_unverified' : 'not_configured',
+      },
+    });
+  });
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'API_NOT_FOUND', message: 'API 路由不存在。' }));
   app.use((error, req, res, next) => {
