@@ -65,3 +65,6 @@ V0.1 已进入可验证的流式聊天阶段：版本化 API、SQLite 消息状�
 
 
 上下文策略进度：已实现 `AI_MAX_CONTEXT_CHARS` 字符预算，按最近完整轮次保留历史，并在当前消息超限时于调用 Provider 前返回 413；Provider Token 计数与模型上下文窗口仍未验证。
+
+
+移动端性能进展：路由页面已通过 React.lazy 按需加载，CI 构建的入口 JS 为 276.17 kB（gzip 88.45 kB），共享库 163.12 kB（gzip 48.91 kB），Vite 不再报告超过 500 kB 的 chunk。尚未完成真实 Android 浏览器端到端回归。

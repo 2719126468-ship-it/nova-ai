@@ -2,7 +2,7 @@
 
 - 审查日期：2026-11-06
 - 原始审查基线：`main @ 69bec32e1fbb8bfc2a6bf233737e2db414332634`
-- 实施复核基线：`main @ 5cee866750eadbd9e84def6ecfbe36c193fc2b40`
+- 实施复核基线：`main @ 10a42e14de946e99554395b60c8a2b75b0e02546`
 - 范围：当前跟踪源码、环境配置样例、认证、权限、路由、安全中间件、数据库访问与 CI。
 - 结论：**适合受控开发测试；不足以据此宣称已完成公开生产安全审计。**
 
@@ -68,6 +68,6 @@
 | SEC-02 模型状态误导 | **已修复接口语义** | `/api/v1/models` 分开返回 configured/enabled/selectable/status；仅配置未探测时 health 为 unknown、状态为 configured_unverified，不再显示为已连接。尚无主动健康探测。 |
 | SEC-04 数据库迁移 | **已实现基础迁移** | 增加 schema_migrations，启动时执行版本化迁移；消息增加 complete/streaming/failed/cancelled 和 error_code，迁移可重复运行。尚未做备份恢复演练与生产旧库恢复演练。 |
 | Zod 高危依赖 | **已修复** | Zod 由 3.25.76 升至 4.6.7；认证和研究验证错误格式改用 z.flattenError；最新 CI 的 npm ci 审计为 0 vulnerabilities。 |
-| 消息断连与取消 | **已实现，测试仍需扩充** | 前端 AbortController、后端 AbortSignal 传递及断连后状态记录已实现；尚需增加主动取消/断连的端到端回归，验证上游请求确实终止且不会遗留 streaming 状态。 |
+| 消息断连与取消 | **已实现并通过集成测试** | 真实 HTTP 客户端中止 SSE 后，CI 验证上游连接关闭、部分内容持久化且消息状态为 cancelled；Provider 超时也已覆盖。仍需在目标手机浏览器做真实设备回归。 |
 
 公开发布前仍必须处理 SEC-07（第三方模型数据告知），并完成 SEC-08 CSRF/Origin 严格策略、双用户隔离测试、备份恢复演练及部署环境验证。不能因 CI 通过就宣称通过完整安全审计。
