@@ -6,6 +6,7 @@ function apiError(data, status) {
   error.status = status;
   error.code = data?.error;
   error.details = data?.details;
+  error.contextPolicy = data?.contextPolicy;
   return error;
 }
 

@@ -10,10 +10,10 @@ export function resolveTokenizer(model) {
   if (requested !== 'auto') return null;
 
   const modelId = String(model?.upstreamModelId || model?.id || '').toLowerCase();
-  if (/^(gpt-5|gpt-4\\.5|gpt-4\\.1|gpt-4o|o1(?:-|$)|o3(?:-|$)|o4-mini(?:-|$))/.test(modelId)) {
+  if (/^(gpt-5|gpt-4\.5|gpt-4\.1|gpt-4o|o1(?:-|$)|o3(?:-|$)|o4-mini(?:-|$))/.test(modelId)) {
     return 'o200k_base';
   }
-  if (/^(gpt-4(?:-|$)|gpt-3\\.5-turbo|gpt-35-turbo)/.test(modelId)) {
+  if (/^(gpt-4(?:-|$)|gpt-3\.5-turbo|gpt-35-turbo)/.test(modelId)) {
     return 'cl100k_base';
   }
   return null;
@@ -52,8 +52,6 @@ export function countPromptTokens(messages, model, options = {}) {
         warning: null,
       };
     } catch {
-      // If a tokenizer cannot be loaded, only use a conservative byte upper bound
-      // when a model context window must be enforced.
       if (!options.allowByteUpperBound) {
         return { tokens: null, tokenizer: null, source: 'unknown', confidence: 'unknown', warning: 'TOKENIZER_UNAVAILABLE' };
       }

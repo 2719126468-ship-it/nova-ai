@@ -10,6 +10,39 @@ import { ErrorNotice, Loading } from '../components/UI';
 
 const HighlightedMarkdown = lazy(() => import('../components/HighlightedMarkdown.jsx'));
 
+const contextSourceLabels = {
+  provider_reported: '上游回报',
+  admin_configured: '管理员配置（未验证）',
+  environment_configured: '服务器环境配置（未验证）',
+  unknown: '未知',
+};
+
+function describeContextPolicy(policy) {
+  if (!policy) return '';
+  const parts = [];
+  if (policy.historyTruncated) parts.push('已按预算缩短较早历史，本条问题完整保留');
+  if (policy.modelContextWindowTokens) {
+    parts.push('上下文窗口 ' + policy.modelContextWindowTokens.toLocaleString() + '（' + (contextSourceLabels[policy.modelContextWindowSource] || '未知来源') + '）');
+  } else {
+    parts.push('模型上下文窗口未知');
+  }
+  if (Number.isFinite(policy.estimatedInputTokens)) {
+    const countLabel = policy.tokenEstimateSource === 'tokenizer_estimate'
+      ? '本地分词估算'
+      : policy.tokenEstimateSource === 'byte_upper_bound'
+        ? 'UTF-8 字节保守上界'
+        : '输入估算';
+    parts.push(countLabel + ' ' + policy.estimatedInputTokens.toLocaleString() + ' tokens');
+  } else {
+    parts.push('Token 数未知');
+  }
+  if (Number.isFinite(policy.inputTokenBudget)) {
+    parts.push('输入预算 ' + policy.inputTokenBudget.toLocaleString());
+  }
+  if (Number.isFinite(policy.outputReserveTokens)) parts.push((policy.outputLimitEnforced === false ? '回复空间预留' : '回复上限') + ' ' + policy.outputReserveTokens.toLocaleString() + (policy.outputLimitEnforced === false ? '（未向上游提交硬限制）' : '（已提交上游）'));
+  return parts.join(' · ');
+}
+
 export default function Chat() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
@@ -24,6 +57,7 @@ export default function Chat() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [modelInfo, setModelInfo] = useState(null);
   const [selectedModelId, setSelectedModelId] = useState('');
+  const [contextNotice, setContextNotice] = useState('');
   const [copiedMessageId, setCopiedMessageId] = useState(null);
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [versionMessageId, setVersionMessageId] = useState(null);
@@ -47,6 +81,7 @@ export default function Chat() {
     setVersionsByMessage({});
     setDraft('');
     setError('');
+    setContextNotice('');
     const data = await api('/api/v1/conversations/' + id);
     setMessages(data.messages);
   }, []);
@@ -180,6 +215,7 @@ export default function Chat() {
     }
 
     setError('');
+    setContextNotice('');
     setSending(true);
     const controller = new AbortController();
     abortRef.current = controller;
@@ -209,6 +245,7 @@ export default function Chat() {
         signal: controller.signal,
       })) {
         if (packet.event === 'message_start') {
+          setContextNotice(describeContextPolicy(packet.data?.contextPolicy));
           if (editId) {
             setMessages((current) => {
               const targetIndex = current.findIndex((message) => String(message.id) === String(editId));
@@ -279,6 +316,7 @@ export default function Chat() {
       } else {
         setMessages((current) => current.filter((message) => message.id !== pendingId));
       }
+      if (e.contextPolicy) setContextNotice(describeContextPolicy(e.contextPolicy));
       if (e.name !== 'AbortError') {
         setError(e.code === 'AI_PROVIDER_NOT_CONFIGURED'
           ? 'NOVA 的模型接口尚未配置。当前输入没有生成虚假回答；请配置服务端 AI_BASE_URL、AI_API_KEY 和 AI_MODEL 后重试。'
@@ -329,7 +367,7 @@ export default function Chat() {
             <HighlightedMarkdown content={message.content} />
           </Suspense>
         ) : <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>}</div></div></div>)}<div ref={endRef} /></div>}</div>
-      <div className="chat-composer-wrap"><ErrorNotice>{error}</ErrorNotice><form className="chat-composer" onSubmit={sendMessage}>{editingMessageId && <div className="composer-edit-hint">重新生成成功后，会删除这条消息后面的对话内容；失败或停止会保留原对话。</div>}<textarea value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={editingMessageId ? '编辑消息并重新生成…' : '向 NOVA 发送消息…'} rows={1} disabled={sending} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(e); } }} /><div className="composer-bottom"><span><Sparkles size={13} /> {selectedModel?.configured && selectedModel?.status === 'unknown' ? '模型已配置 · 上游状态未验证' : selectedModel ? '已选择模型 · 上游状态未知' : '模型服务由服务器配置'}</span>{editingMessageId && !sending && <button className="composer-cancel" type="button" onClick={cancelEditMessage}>取消编辑</button>}{sending ? <button type="button" onClick={stopGeneration} aria-label="停止生成"><Square size={15} /></button> : <button type="submit" disabled={!draft.trim()} aria-label="发送消息"><Send size={17} /></button>}</div></form><div className="chat-disclaimer">NOVA 可能会出错。重要信息请自行核实。模型未配置时不会生成虚假回答。</div></div>
+      <div className="chat-composer-wrap"><ErrorNotice>{error}</ErrorNotice>{contextNotice && <div className="context-budget-notice" role="status">{contextNotice}</div>}<form className="chat-composer" onSubmit={sendMessage}>{editingMessageId && <div className="composer-edit-hint">重新生成成功后，会删除这条消息后面的对话内容；失败或停止会保留原对话。</div>}<textarea value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={editingMessageId ? '编辑消息并重新生成…' : '向 NOVA 发送消息…'} rows={1} disabled={sending} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(e); } }} /><div className="composer-bottom"><span><Sparkles size={13} /> {selectedModel?.configured && selectedModel?.status === 'unknown' ? '模型已配置 · 上游状态未验证' : selectedModel ? '已选择模型 · 上游状态未知' : '模型服务由服务器配置'}</span>{editingMessageId && !sending && <button className="composer-cancel" type="button" onClick={cancelEditMessage}>取消编辑</button>}{sending ? <button type="button" onClick={stopGeneration} aria-label="停止生成"><Square size={15} /></button> : <button type="submit" disabled={!draft.trim()} aria-label="发送消息"><Send size={17} /></button>}</div></form><div className="chat-disclaimer">NOVA 可能会出错。重要信息请自行核实。模型未配置时不会生成虚假回答。</div></div>
     </section>
   </main>;
 }

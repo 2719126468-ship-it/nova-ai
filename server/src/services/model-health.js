@@ -1,7 +1,8 @@
 import { config } from '../config.js';
+import { db } from '../db.js';
 import { resolveModel } from './model-registry.js';
 
-function result(status, code, message, modelId, durationMs) {
+function result(status, code, message, modelId, durationMs, contextWindow = null) {
   return {
     modelId,
     status,
@@ -9,7 +10,28 @@ function result(status, code, message, modelId, durationMs) {
     message,
     checkedAt: new Date().toISOString(),
     durationMs,
+    contextWindow,
   };
+}
+
+function readProviderContextWindow(entry) {
+  const fields = [
+    'context_length',
+    'context_window',
+    'max_context_length',
+    'max_model_len',
+    'contextLength',
+    'contextWindow',
+    'maxContextLength',
+    'maxModelLen',
+  ];
+  for (const field of fields) {
+    const raw = entry?.[field];
+    const value = typeof raw === 'number' ? raw
+      : (typeof raw === 'string' && /^\d+$/.test(raw.trim()) ? Number(raw) : null);
+    if (Number.isSafeInteger(value) && value > 0 && value <= 10000000) return value;
+  }
+  return null;
 }
 
 export async function probeModel(modelId) {
@@ -58,11 +80,34 @@ export async function probeModel(modelId) {
       return result('unknown', 'MODEL_LIST_UNRECOGNIZED', '上游响应成功，但未返回可识别的模型列表。', model.id, durationMs);
     }
 
-    const modelFound = payload.data.some((entry) => entry && entry.id === model.upstreamModelId);
-    if (!modelFound) {
+    const matchedModel = payload.data.find((entry) => entry && entry.id === model.upstreamModelId);
+    if (!matchedModel) {
+      db.prepare('DELETE FROM model_context_windows WHERE provider_id=? AND upstream_model_id=?')
+        .run(model.providerId, model.upstreamModelId);
       return result('unknown', 'MODEL_NOT_LISTED', 'Provider 可访问，但没有在模型目录中确认该模型 ID。', model.id, durationMs);
     }
-    return result('healthy', 'MODEL_LIST_CONFIRMED', 'Provider 可访问，且模型 ID 已在上游目录中确认。', model.id, durationMs);
+    const reportedContextTokens = readProviderContextWindow(matchedModel);
+    let contextWindow = null;
+    if (reportedContextTokens) {
+      const checkedAt = new Date().toISOString();
+      db.prepare(`
+        INSERT INTO model_context_windows(provider_id,upstream_model_id,context_tokens,source,checked_at)
+        VALUES(?,?,?,'provider_reported',?)
+        ON CONFLICT(provider_id,upstream_model_id) DO UPDATE SET
+          context_tokens=excluded.context_tokens,
+          source=excluded.source,
+          checked_at=excluded.checked_at
+      `).run(model.providerId, model.upstreamModelId, reportedContextTokens, checkedAt);
+      contextWindow = {
+        tokens: reportedContextTokens,
+        source: 'provider_reported',
+        checkedAt,
+      };
+    } else {
+      db.prepare('DELETE FROM model_context_windows WHERE provider_id=? AND upstream_model_id=?')
+        .run(model.providerId, model.upstreamModelId);
+    }
+    return result('healthy', 'MODEL_LIST_CONFIRMED', 'Provider 可访问，且模型 ID 已在上游目录中确认。', model.id, durationMs, contextWindow);
   } catch (error) {
     const durationMs = Date.now() - startedAt;
     if (controller.signal.aborted || error?.name === 'AbortError') {

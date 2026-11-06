@@ -254,3 +254,16 @@
   .message-version-meta { align-items: flex-start; flex-direction: column; gap: 3px; }
   .message-version-meta time { text-align: left; }
 }
+
+.context-budget-notice {
+  max-width: 920px;
+  margin: 0 auto 8px;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}

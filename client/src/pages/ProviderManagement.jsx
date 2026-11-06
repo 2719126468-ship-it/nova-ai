@@ -10,9 +10,16 @@ const emptyDraft = () => ({
   apiKey: '',
   enabled: true,
   modelsText: JSON.stringify([
-    { id: 'your-model-id', name: 'Model display name', enabled: true, capabilities: ['chat', 'text'], contextLimit: null },
+    { id: 'your-model-id', name: 'Model display name', enabled: true, capabilities: ['chat', 'text'], contextLimit: null, tokenizer: 'auto', maxTokensParameter: 'auto' },
   ], null, 2),
 });
+
+const contextSourceLabels = {
+  provider_reported: '上游回报',
+  admin_configured: '管理员配置（未验证）',
+  environment_configured: '服务器环境配置（未验证）',
+  unknown: '未知',
+};
 
 const healthLabels = {
   healthy: '已验证可访问',
@@ -235,7 +242,7 @@ export default function ProviderManagement() {
         <label className="provider-enabled-field"><input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} /> 启用此 Provider</label>
         <label className="provider-field-wide">模型列表（JSON）
           <textarea required rows={8} spellCheck={false} value={draft.modelsText} onChange={(event) => setDraft({ ...draft, modelsText: event.target.value })} />
-          <small>每个模型填写 id；name、enabled、capabilities、contextLimit 可选。contextLimit 是可选的参考字段；当前仅保存和展示，不代表经过验证的上限，也不会限制请求。未知时填写 null。</small>
+          <small>每个模型填写 id；name、enabled、capabilities、contextLimit、tokenizer 可选。contextLimit 是管理员配置的参考上限；tokenizer 可填 auto、cl100k_base、o200k_base 或 none；maxTokensParameter 可填 auto、max_tokens、max_completion_tokens 或 none。自动参数会为 GPT-5 / o 系列使用 max_completion_tokens，其它常见聊天模型使用 max_tokens。</small>
         </label>
       </div>
       <div className="provider-editor-actions">
@@ -260,8 +267,11 @@ export default function ProviderManagement() {
               const modelId = provider.id + ':' + model.id;
               const health = healthByModel[modelId];
               const publicModel = catalog?.models?.find((item) => item.id === modelId);
+              const contextLimit = health?.contextWindow?.tokens ?? publicModel?.contextLimit ?? model.contextLimit;
+              const contextSource = health?.contextWindow?.source || publicModel?.contextLimitSource
+                || (model.contextLimit ? (provider.readOnly ? 'environment_configured' : 'admin_configured') : 'unknown');
               return <div className="provider-model-row" key={model.id}>
-                <div><strong>{model.name || model.id}</strong><small>{model.id}{model.contextLimit ? ' · 配置参考值 ' + model.contextLimit.toLocaleString() : ' · 未填写上下文参考值'}</small></div>
+                <div><strong>{model.name || model.id}</strong><small>{model.id}{contextLimit ? ' · ' + contextLimit.toLocaleString() + ' tokens · ' + (contextSourceLabels[contextSource] || '未知来源') : ' · 上下文窗口未知'}</small></div>
                 <span className={'provider-model-status ' + (!model.enabled || !provider.enabled ? 'is-off' : '')}>{model.enabled && provider.enabled ? '已启用' : '已停用'}</span>
                 {publicModel?.selectable && <button type="button" onClick={() => checkModel(modelId)} disabled={Boolean(checkingModelId)}>{checkingModelId === modelId ? '检查中…' : healthLabels[health?.status || 'unknown']}</button>}
               </div>;

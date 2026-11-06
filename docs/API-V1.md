@@ -17,11 +17,11 @@ Returns API health and whether the server has a complete AI provider configurati
 
 ### GET /api/v1/models
 
-Returns the server-side model catalog. The response contains providers, models, defaultModelId and contextPolicy. API keys and provider base URLs are never returned. The top-level provider object reports configuration separately from upstream health; configured providers remain health: unknown until a real probe is run. The health endpoint returns ai.status as configured_unverified or not_configured.
+Returns the server-side model catalog. The response contains providers, models, defaultModelId and contextPolicy. API keys and provider base URLs are never returned. The top-level provider object reports configuration separately from upstream health; configured providers remain health: unknown until a real probe is run. The health endpoint returns ai.status as configured_unverified or not_configured. Model entries expose context-window provenance and tokenizer/output-limit configuration without exposing credentials.
 
 ### POST /api/v1/models/health
 
-Requires an authenticated session and is limited to 5 checks per user per minute. Body: `{ "modelId": "provider-id:upstream-model-id" }`. The server makes a read-only authenticated GET request to the Provider's `/models` endpoint; it never generates a prompt or spends completion tokens. It returns `healthy` only when the upstream catalog confirms the exact upstream model ID. A provider that does not support `/models`, or returns an unrecognized catalog, remains `unknown` rather than being incorrectly marked unavailable. Authentication failures/server errors report `unavailable`; upstream 429 reports `degraded`. The result is an on-demand observation, not a persisted long-term health guarantee.
+Requires an authenticated session and is limited to 5 checks per user per minute. Body: `{ "modelId": "provider-id:upstream-model-id" }`. The server makes a read-only authenticated GET request to the Provider's `/models` endpoint; it never generates a prompt or spends completion tokens. It returns `healthy` only when the upstream catalog confirms the exact upstream model ID. When that model entry explicitly returns a positive integer context field (`context_length`, `context_window`, `max_context_length`, `max_model_len`, or their camelCase equivalents), NOVA stores it as `provider_reported` and uses it ahead of a manually configured hint. A provider that does not support `/models`, returns an unrecognized catalog, or omits a context field remains healthy/unknown as appropriate but does not create a verified window. Authentication failures/server errors report `unavailable`; upstream 429 reports `degraded`. The result is an on-demand observation, not a persisted long-term health guarantee.
 
 A configured model has this shape:
 
@@ -36,11 +36,20 @@ A configured model has this shape:
   "status": "unknown",
   "statusLabel": "NOT_CHECKED",
   "capabilities": ["chat", "text"],
-  "contextLimit": null
+  "contextLimit": 98304,
+  "contextLimitSource": "provider_reported",
+  "contextLimitCheckedAt": "2026-11-07T00:00:00.000Z",
+  "tokenizer": "auto",
+  "tokenizerSource": "automatic",
+  "maxTokensParameter": "auto"
 }
 ```
 
-`contextLimit` is optional provider-supplied/configured reference metadata only. B2-01 stores and displays it but does not enforce it or treat it as a verified context window; token-aware request budgeting is tracked separately in B2-02. Model IDs returned by the catalog are the public selection IDs; multi-provider IDs use providerId:upstreamModelId. status: unknown means that the model is configured but has not been actively verified. Do not present this state as connected, healthy, or available. The registry supports OpenAI-compatible providers from server environment configuration and encrypted administrator-managed records. Environment-defined providers remain read-only in the admin UI and take precedence over database records with the same ID. Native Anthropic protocol support, browser-login/OAuth providers and automatic model discovery remain unimplemented.
+`contextLimit` is the best available context-window value. `contextLimitSource` is one of `provider_reported`, `admin_configured`, `environment_configured`, or `unknown`. A provider-reported value is taken only from an explicit upstream model-catalog field during a health probe; admin/environment values are deployment hints and are not independently verified. A provider-reported value takes precedence over configured hints.
+
+`tokenizer` supports `auto`, `cl100k_base`, `o200k_base`, and `none`. Automatic selection is intentionally limited to recognized OpenAI model families; third-party compatible models should be assigned their actual tokenizer by an administrator when known. `maxTokensParameter` supports `auto`, `max_tokens`, `max_completion_tokens`, and `none`; `auto` selects the completion parameter based on the upstream model family. Choose `none` only when the provider rejects both common completion-limit fields.
+
+Model IDs returned by the catalog are the public selection IDs; multi-provider IDs use providerId:upstreamModelId. status: unknown means that the model is configured but has not been actively verified. Do not present this state as connected, healthy, or available. The registry supports OpenAI-compatible providers from server environment configuration and encrypted administrator-managed records. Environment-defined providers remain read-only in the admin UI and take precedence over database records with the same ID. Native Anthropic protocol support, browser-login/OAuth providers and automatic model discovery remain unimplemented.
 
 Malformed AI_PROVIDERS_JSON disables the environment-defined provider set and reports AI_PROVIDERS_JSON_INVALID; it does not silently fall back to legacy environment credentials. Valid database-managed providers can still be loaded.
 
@@ -64,7 +73,17 @@ The default model priority is `AI_DEFAULT_MODEL` / legacy `AI_MODEL`, then the d
 
 ## Context budget
 
-The server applies a configurable character budget to message content before sending a prompt upstream. Configure it with `AI_MAX_CONTEXT_CHARS` (default `40000`, allowed range `512`–`200000`). This is a JavaScript string-length budget, **not a token count**. The API reports `contextPolicy.tokenLimit: null` because provider/model token windows are not currently verified. NOVA keeps the newest complete turns that fit and always preserves the current user message. A failed/cancelled turn's unmatched trailing user message is not replayed as conversation history. If the current message alone exceeds the configured budget, the API returns HTTP 413 `AI_INPUT_TOO_LARGE` before calling the provider.
+NOVA applies both a global message-content guard and a model-aware token budget.
+
+- `AI_MAX_CONTEXT_CHARS` (default `40000`, allowed `512`–`200000`) is a JavaScript string-length ceiling, not a token count.
+- `AI_CONTEXT_OUTPUT_RESERVE` (default `2048`, allowed `128`–`100000`) is sent upstream as the maximum completion length when the provider accepts the configured completion-limit parameter.
+- `AI_CONTEXT_SAFETY_MARGIN_PERCENT` (default `10`, allowed `0`–`30`) keeps a margin for chat framing and tokenizer differences.
+
+When a model has a known or configured context window, NOVA calculates the input allowance as `floor(contextLimit × (1 − safetyMargin)) − outputReserve`. It uses a local `js-tiktoken` estimate for supported OpenAI tokenizers. Automatic inference covers only recognized GPT model families; assign `cl100k_base` or `o200k_base` explicitly for other compatible providers when their tokenizer is known. If the tokenizer is unknown but a context window is available, NOVA uses a conservative UTF-8 byte upper bound for admission/truncation. This is deliberately labelled as an upper bound, not as a measured token count. If no context window is available, NOVA falls back to the character ceiling and reports the token count as unknown.
+
+NOVA always keeps the current user message intact and removes only older complete history messages that do not fit. It considers at most the newest 30 completed messages; an unmatched trailing user message from a failed/cancelled turn is not replayed. If the current message alone exceeds the character or input-token allowance, the API returns HTTP 413 `AI_INPUT_TOO_LARGE` before calling the provider. The error includes the same `contextPolicy` fields used by a successful request.
+
+The Chat UI explains whether history was shortened, shows the best available context-window source, labels local tokenizer estimates separately from byte upper bounds, and shows the input and output allowances. Streaming `message_start` includes `contextPolicy`; the legacy JSON response includes it as well.
 
 ## Account data
 
@@ -163,7 +182,7 @@ Each event uses the standard event: and data: framing.
 
 | Event | Payload | Meaning |
 |---|---|---|
-| message_start | userMessage, assistantMessageId, modelId | The user message and pending assistant message have been persisted |
+| message_start | userMessage, assistantMessageId, modelId, contextPolicy | The user message and pending assistant message have been persisted; contextPolicy describes the effective budget and any history trimming |
 | message_delta | messageId, delta | A new text fragment is available |
 | message_complete | assistantMessage | The final assistant text has been saved |
 | message_error | messageId, code, message | Generation failed; any partial text is retained (edit/retry operations preserve the previous conversation branch) |
@@ -206,7 +225,7 @@ Clients should use AbortController to cancel the streaming fetch when the user p
 | AI_INVALID_STREAM | 502 | Provider returned malformed SSE data |
 | AI_PROVIDER_STREAM_ERROR | 502 | Provider sent an error event inside an SSE response |
 | AI_PROVIDER_ERROR | 502 | Legacy fallback for an unclassified provider error |
-| AI_INPUT_TOO_LARGE | 413 | Current message exceeds the configured character budget |
+| AI_INPUT_TOO_LARGE | 413 | Current message exceeds the character ceiling or model input-token allowance |
 | AI_RATE_LIMITED | 429 | Authenticated user's generation frequency limit was reached |
 | AI_GENERATION_IN_PROGRESS | 409 | Another generation is already active for this user |
 
@@ -231,8 +250,8 @@ Administrators can read the latest records and aggregate totals through `GET /ap
 
 ## Current limitations
 
-- One OpenAI-compatible provider and one configured model are supported.
-- The server does not yet perform active model health checks.
-- Context considers up to 30 completed messages and trims older turns to the configured character budget; provider-specific token counting and context-window limits remain pending.
-- Persistent request Usage records now capture lifecycle, duration, provider/model, normalized failure code, and upstream-reported token counts when supplied. Tokenizer-based estimates, model pricing/cost accounting, hard account budgets, tools, attachments, and provider failover remain unimplemented. Per-user request throttling and one-active-generation controls use a process-local store.
+- The current native adapter targets OpenAI-compatible Chat Completions. Native Anthropic protocol support, browser-login/OAuth providers, automatic model discovery, provider failover, tools and attachments remain unimplemented.
+- Provider health and explicit model context-window discovery are read-only, on-demand probes; they are not continuous monitoring or a guarantee that a provider's limits will remain unchanged.
+- Context budgets use local estimates or conservative byte upper bounds rather than the upstream tokenizer implementation for every third-party model. Cost/pricing estimates and hard account spending budgets remain unimplemented.
+- Persistent request Usage records capture lifecycle, duration, provider/model, normalized failure code, and upstream-reported token counts when supplied. Per-user request throttling and one-active-generation controls use a process-local store.
 - The old non-streaming JSON message endpoint remains available for compatibility; the Chat UI uses the streaming endpoint. User-message edits and assistant regeneration use the versioned PUT streaming endpoint and commit the replacement branch only after success. Assistant answer versions can be listed and restored with the conversation version endpoints.

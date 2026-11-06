@@ -13,6 +13,8 @@ const modelSchema = z.object({
   enabled: z.boolean().optional().default(true),
   capabilities: z.array(z.string().trim().min(1).max(40)).max(20).optional().default(['chat', 'text']),
   contextLimit: z.number().int().positive().max(10000000).nullable().optional().default(null),
+  tokenizer: z.enum(['auto', 'cl100k_base', 'o200k_base', 'none']).optional().default('auto'),
+  maxTokensParameter: z.enum(['auto', 'max_tokens', 'max_completion_tokens', 'none']).optional().default('auto'),
 });
 
 function addUniqueModelIds(models, ctx) {
@@ -64,6 +66,8 @@ function normalizeStoredModels(models) {
     enabled: model.enabled !== false,
     capabilities: [...new Set(model.capabilities || ['chat', 'text'])],
     contextLimit: model.contextLimit ?? null,
+    tokenizer: model.tokenizer || 'auto',
+    maxTokensParameter: model.maxTokensParameter || 'auto',
   }));
 }
 
@@ -246,18 +250,23 @@ router.put('/providers/:id', (req, res, next) => {
       ? encryptProviderSecret(input.apiKey)
       : current.api_key_encrypted;
     const models = input.models ? normalizeStoredModels(input.models) : JSON.parse(current.models_json);
+    const nextBaseUrl = input.baseUrl ? input.baseUrl.replace(/\/+$/, '') : current.base_url;
+    const contextSourceChanged = nextBaseUrl !== current.base_url || input.models !== undefined;
     db.prepare(`
       UPDATE ai_providers
       SET name=?,base_url=?,api_key_encrypted=?,enabled=?,models_json=?,updated_at=CURRENT_TIMESTAMP
       WHERE id=?
     `).run(
       input.name ?? current.name,
-      input.baseUrl ? input.baseUrl.replace(/\/+$/, '') : current.base_url,
+      nextBaseUrl,
       apiKeyEncrypted,
       input.enabled === undefined ? current.enabled : (input.enabled ? 1 : 0),
       JSON.stringify(models),
       id.data,
     );
+    if (contextSourceChanged) {
+      db.prepare('DELETE FROM model_context_windows WHERE provider_id=?').run(id.data);
+    }
 
     res.json(providerManagementState());
   } catch (error) {
@@ -268,7 +277,13 @@ router.put('/providers/:id', (req, res, next) => {
 router.delete('/providers/:id', (req, res) => {
   const id = providerIdSchema.safeParse(req.params.id);
   if (!id.success) return res.status(400).json({ error: 'INVALID_ID', message: 'Provider ID 无效。' });
-  const result = db.prepare('DELETE FROM ai_providers WHERE id=?').run(id.data);
+  const result = db.transaction(() => {
+    const deleted = db.prepare('DELETE FROM ai_providers WHERE id=?').run(id.data);
+    if (deleted.changes) {
+      db.prepare('DELETE FROM model_context_windows WHERE provider_id=?').run(id.data);
+    }
+    return deleted;
+  })();
   if (!result.changes) return res.status(404).json({ error: 'PROVIDER_NOT_FOUND', message: '找不到可管理的 Provider。' });
   const defaultSetting = db.prepare("SELECT value FROM ai_settings WHERE key='default_model_id'").get()?.value || '';
   if (defaultSetting.startsWith(id.data + ':')) {
