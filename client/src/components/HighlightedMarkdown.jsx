@@ -54,7 +54,7 @@ function MarkdownCodeBlock({ children }) {
   const codeNode = Children.toArray(children).find(isValidElement);
   const codeChildren = codeNode?.props?.children ?? children;
   const className = codeNode?.props?.className || '';
-  const language = className.match(/(?:^|\\s)language-([a-z0-9_-]+)/i)?.[1] || '';
+  const language = className.match(/(?:^|\s)language-([a-z0-9_-]+)/i)?.[1] || '';
   const codeText = extractCodeText(codeChildren);
   const [copyState, setCopyState] = useState('idle');
   const copyTimer = useRef(null);
