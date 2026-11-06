@@ -134,7 +134,7 @@ export function ProjectContextEditor() {
         credentials: 'same-origin',
         headers: {
           'Content-Type': 'application/octet-stream',
-          'X-App-Request': '1',
+          'X-Requested-With': 'NOVA-Web',
           'X-File-Name': encodeURIComponent(file.name),
         },
         body: new Blob([file], { type: 'application/octet-stream' }),
