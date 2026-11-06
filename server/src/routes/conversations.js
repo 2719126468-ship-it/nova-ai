@@ -110,7 +110,7 @@ function buildPrompt(conversationId, currentContent, model, beforeMessageId = nu
     estimatedInputTokens: currentEstimate.tokens,
     tokenizer: currentEstimate.tokenizer,
     tokenEstimateSource: currentEstimate.source,
-    outputReserveTokens: contextWindowTokens === null ? null : config.aiContextOutputReserve,
+    outputReserveTokens: config.aiContextOutputReserve,
     safetyMarginPercent: contextWindowTokens === null ? null : config.aiContextSafetyMarginPercent,
     currentMessagePreserved: true,
     historyTruncated: false,
@@ -209,6 +209,7 @@ async function streamAssistantResponse(res, prompt, pending, generationKey, hook
   try {
     const content = await streamAssistantReply(prompt, {
       modelId: hooks.modelId || getModelRegistry().defaultModelId,
+      maxOutputTokens: hooks.contextPolicy?.outputReserveTokens,
       signal: controller.signal,
       onUsage(usage) { providerUsage = usage; },
       onDelta(delta) {
@@ -437,6 +438,7 @@ router.post('/:id/messages', generationLimiter, async (req, res, next) => {
         const reply = await createAssistantReply(promptResult.prompt, {
           signal: controller.signal,
           modelId: selectedModel.id,
+          maxOutputTokens: promptResult.contextPolicy.outputReserveTokens,
           onUsage(usage) { providerUsage = usage; },
         });
         if (clientDisconnected || controller.signal.aborted || res.destroyed) {
