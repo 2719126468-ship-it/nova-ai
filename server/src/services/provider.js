@@ -1,4 +1,5 @@
 import { config } from '../config.js';
+import { resolveModel } from './model-registry.js';
 
 function createProviderError(status) {
   if (status === 429) {
@@ -33,8 +34,9 @@ function createCancelledError() {
   return error;
 }
 
-async function withProviderRequest(messages, stream, externalSignal, consume) {
-  if (!config.aiConfigured) throw new ProviderNotConfiguredError();
+async function withProviderRequest(messages, stream, externalSignal, consume, options = {}) {
+  const model = resolveModel(options.modelId);
+  if (!model) throw new ProviderNotConfiguredError();
 
   const controller = new AbortController();
   let timedOut = false;
@@ -48,14 +50,14 @@ async function withProviderRequest(messages, stream, externalSignal, consume) {
   else externalSignal?.addEventListener('abort', abortExternal, { once: true });
 
   try {
-    const response = await fetch(config.aiBaseUrl + '/chat/completions', {
+    const response = await fetch(model.baseUrl + '/chat/completions', {
       method: 'POST',
       headers: {
-        Authorization: 'Bearer ' + config.aiApiKey,
+        Authorization: 'Bearer ' + model.apiKey,
         'Content-Type': 'application/json',
         Accept: stream ? 'text/event-stream' : 'application/json',
       },
-      body: JSON.stringify({ model: config.aiModel, messages, temperature: 0.7, stream }),
+      body: JSON.stringify({ model: model.upstreamModelId, messages, temperature: 0.7, stream }),
       signal: controller.signal,
     });
 
@@ -74,7 +76,7 @@ async function withProviderRequest(messages, stream, externalSignal, consume) {
 
 export class ProviderNotConfiguredError extends Error {
   constructor() {
-    super('AI 服务尚未配置。请在服务端环境变量中设置 AI_BASE_URL、AI_API_KEY 和 AI_MODEL。');
+    super('NOVA 尚未配置可用模型。请在服务端设置 AI_BASE_URL/AI_API_KEY/AI_MODEL，或配置 AI_PROVIDERS_JSON。');
     this.code = 'AI_PROVIDER_NOT_CONFIGURED';
     this.status = 503;
   }
@@ -91,7 +93,7 @@ export async function createAssistantReply(messages, options = {}) {
       throw error;
     }
     return content.trim();
-  });
+  }, options);
 }
 
 export async function streamAssistantReply(messages, options = {}) {
@@ -190,5 +192,5 @@ export async function streamAssistantReply(messages, options = {}) {
       throw error;
     }
     return content;
-  });
+  }, options);
 }

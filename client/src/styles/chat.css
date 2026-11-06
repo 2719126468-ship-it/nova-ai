@@ -68,3 +68,8 @@
 .composer-edit-hint { margin: 0 2px 8px; padding: 7px 9px; border-left: 2px solid var(--accent); background: var(--surface-soft); color: var(--muted); font-size: 9px; line-height: 1.6; }
 .composer-bottom button.composer-cancel { width: auto; height: 27px; min-width: 48px; padding: 0 9px; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--muted); font-size: 9px; font-weight: 500; }
 .composer-bottom button.composer-cancel:hover { background: var(--surface-soft); color: var(--ink); }
+
+.chat-model-select { max-width: 210px; min-width: 70px; border: 0; outline: 0; appearance: none; background: transparent; color: var(--ink); font: inherit; font-size: 11px; font-weight: 650; padding: 4px 2px; cursor: pointer; }
+.chat-model-select:disabled { opacity: .65; cursor: default; }
+.chat-model-select option { color: #17181c; background: #fff; }
+@media (max-width: 520px) { .chat-model-select { max-width: 145px; } .chat-model-badge { gap: 5px; } }

@@ -38,6 +38,8 @@ A configured model has this shape:
 
 status: unknown means that the model is configured but has not been actively verified. Do not present this state as connected, healthy, or available. The initial release exposes one environment-configured model; it does not yet provide a multi-provider registry or live health probes.
 
+Malformed AI_PROVIDERS_JSON disables the multi-provider registry and reports AI_PROVIDERS_JSON_INVALID in the catalog; a non-empty invalid JSON setting does not silently fall back to legacy credentials.
+
 ## Context budget
 
 The server applies a configurable character budget to message content before sending a prompt upstream. Configure it with `AI_MAX_CONTEXT_CHARS` (default `40000`, allowed range `512`–`200000`). This is a JavaScript string-length budget, **not a token count**. The API reports `contextPolicy.tokenLimit: null` because provider/model token windows are not currently verified. NOVA keeps the newest complete turns that fit and always preserves the current user message. A failed/cancelled turn's unmatched trailing user message is not replayed as conversation history. If the current message alone exceeds the configured budget, the API returns HTTP 413 `AI_INPUT_TOO_LARGE` before calling the provider.

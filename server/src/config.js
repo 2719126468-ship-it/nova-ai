@@ -13,10 +13,13 @@ export const config = {
   aiBaseUrl: (process.env.AI_BASE_URL || '').replace(/\/+$/, ''),
   aiApiKey: process.env.AI_API_KEY || '',
   aiModel: process.env.AI_MODEL || '',
+  aiProvidersJson: process.env.AI_PROVIDERS_JSON || '',
+  aiDefaultModelId: process.env.AI_DEFAULT_MODEL || '',
   aiTimeoutMs: Number(process.env.AI_TIMEOUT_MS || 60000),
   aiMaxContextChars: Number(process.env.AI_MAX_CONTEXT_CHARS || 40000),
   sessionDays: 7,
-  get aiConfigured() { return Boolean(this.aiBaseUrl && this.aiApiKey && this.aiModel); },
+  get aiConfiguredLegacy() { return Boolean(this.aiBaseUrl && this.aiApiKey && this.aiModel); },
+  get aiConfigured() { return Boolean(this.aiProvidersJson.trim() || this.aiConfiguredLegacy); },
 };
 
 export function assertConfig() {

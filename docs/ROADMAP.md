@@ -40,8 +40,9 @@
 
 - [ ] 接入真实搜索服务并管理来源
 - [ ] 研究计划、来源引用、结构化报告、保存和导出
-- [ ] 多 Provider 与模型能力扩展
-- [ ] 模型健康状态和失败统计
+- [x] 多 Provider 基础适配：服务端登记多个 OpenAI-compatible Provider，Chat 可切换启用模型
+- [ ] OAuth/浏览器登录型 Provider、模型自动发现、Provider 健康探测与 failover
+- [ ] 模型健康状态和失败统计（当前目录只显示 unknown/configured_unverified）
 
 ## 1.0 — 稳定公开版本
 

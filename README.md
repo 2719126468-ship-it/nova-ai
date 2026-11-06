@@ -144,16 +144,43 @@ AI_BASE_URL=https://your-provider.example/v1
 AI_API_KEY=your-secret-key
 AI_MODEL=your-model-name
 AI_TIMEOUT_MS=60000
+AI_PROVIDERS_JSON=
+AI_DEFAULT_MODEL=
 ```
 
 说明：
 
 - `AI_BASE_URL` 填写 API 的基础地址，适配器会向其追加 `/chat/completions`。
-- `AI_API_KEY` 仅由服务端读取，不传给前端，也不会通过健康检查接口返回。
-- `AI_MODEL` 是供应商要求的模型标识。
+- `AI_API_KEY` 仅由服务端读取，不传给前端，也不会通过模型目录或健康检查接口返回。
+- `AI_MODEL` 是供应商要求的模型标识（旧版单 Provider 配置仍受支持）。
+- 需要接入多个 OpenAI-compatible Provider 时，可以设置 `AI_PROVIDERS_JSON`。示例：
+  ```json
+  [
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "baseUrl": "https://api.deepseek.com/v1",
+      "apiKey": "server-only-key",
+      "models": [
+        { "id": "deepseek-chat", "name": "DeepSeek Chat", "capabilities": ["chat", "text"] }
+      ]
+    },
+    {
+      "id": "other",
+      "name": "Other Provider",
+      "baseUrl": "https://provider.example/v1",
+      "apiKey": "another-server-only-key",
+      "models": [
+        { "id": "chat-model", "name": "Chat Model" }
+      ]
+    }
+  ]
+  ```
+- `AI_DEFAULT_MODEL` 可指定默认模型，例如 `deepseek:deepseek-chat`；模型选择器只列出服务端已配置且启用的模型。
+- Provider 密钥不会写入浏览器，也不会出现在 `/api/v1/models` 或健康检查响应中。
 - 修改配置后重启服务端。
-- 尚未配置完整的三个值时，聊天接口会返回 `503 AI_PROVIDER_NOT_CONFIGURED`；不会生成虚构回答。
-- 旧版 `POST /api/conversations/:id/messages` 保留完整 JSON 响应；新版 `POST /api/v1/conversations/:id/messages/stream` 支持 SSE 增量输出、上游请求取消和消息生命周期状态。模型目录会区分“配置完整”与“已验证连通”；当前尚无主动健康检查、多 Provider 注册表、工具调用或图片输入。
+- 尚未配置可选择的模型时，聊天接口会返回 `503 AI_PROVIDER_NOT_CONFIGURED`；不会生成虚构回答。
+- 旧版 `POST /api/conversations/:id/messages` 保留完整 JSON 响应；新版 `POST /api/v1/conversations/:id/messages/stream` 支持 SSE 增量输出、上游请求取消和消息生命周期状态。模型目录区分配置、启用、可选择与上游健康状态；多 Provider JSON 注册表已支持 OpenAI-compatible Chat Completions，但尚无主动健康检查、自动发现、浏览器登录/OAuth Provider、工具调用或图片输入。
 
 ## 测试与构建
 

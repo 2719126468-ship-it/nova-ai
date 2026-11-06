@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { config } from '../config.js';
+import { getModelRegistry, resolveModel } from '../services/model-registry.js';
 import {
   createAssistantReply,
   streamAssistantReply,
@@ -31,6 +32,17 @@ const titleSchema = z.object({
   title: z.string().trim().min(1).max(100),
 });
 router.use(requireAuth);
+
+function selectModel(modelId, res, next) {
+  const model = resolveModel(modelId);
+  if (model) return model;
+  if (!getModelRegistry().configured) {
+    next(new ProviderNotConfiguredError());
+    return null;
+  }
+  res.status(404).json({ error: 'MODEL_NOT_FOUND', message: '所选模型未在服务端启用。' });
+  return null;
+}
 
 function findConversation(id, userId) {
   return db.prepare('SELECT * FROM conversations WHERE id=? AND user_id=?').get(id, userId);
@@ -101,11 +113,12 @@ async function streamAssistantResponse(res, prompt, pending, generationKey, hook
   sendSse(res, 'message_start', {
     userMessage: pending.userMessage,
     assistantMessageId: pending.assistantMessageId,
-    modelId: config.aiModel,
+    modelId: hooks.modelId || getModelRegistry().defaultModelId,
   });
 
   try {
     const content = await streamAssistantReply(prompt, {
+      modelId: hooks.modelId || getModelRegistry().defaultModelId,
       signal: controller.signal,
       onDelta(delta) {
         partialContent += delta;
@@ -210,7 +223,7 @@ router.post('/:id/messages', generationLimiter, async (req, res, next) => {
     if (!findConversation(conversationId, req.user.id)) {
       return res.status(404).json({ error: 'NOT_FOUND', message: '对话不存在。' });
     }
-    if (!config.aiConfigured) throw new ProviderNotConfiguredError();
+    if (!resolveModel()) throw new ProviderNotConfiguredError();
     const generationKey = String(req.user.id);
     if (activeGenerations.has(generationKey)) {
       return res.status(409).json({ error: 'AI_GENERATION_IN_PROGRESS', message: '当前账号已有生成任务，请等待完成或停止后重试。' });
@@ -254,10 +267,8 @@ router.post('/:id/messages/stream', generationLimiter, async (req, res, next) =>
   if (!findConversation(conversationId, req.user.id)) {
     return res.status(404).json({ error: 'NOT_FOUND', message: '对话不存在。' });
   }
-  if (!config.aiConfigured) return next(new ProviderNotConfiguredError());
-  if (parsed.data.modelId && parsed.data.modelId !== config.aiModel) {
-    return res.status(404).json({ error: 'MODEL_NOT_FOUND', message: '所选模型未在服务端启用。' });
-  }
+  const selectedModel = selectModel(parsed.data.modelId, res, next);
+  if (!selectedModel) return;
 
   const generationKey = String(req.user.id);
   if (activeGenerations.has(generationKey)) {
@@ -290,7 +301,7 @@ router.post('/:id/messages/stream', generationLimiter, async (req, res, next) =>
     return next(error);
   }
 
-  return streamAssistantResponse(res, prompt, pending, generationKey);
+  return streamAssistantResponse(res, prompt, pending, generationKey, { modelId: selectedModel.id });
 });
 
 router.put('/:id/messages/:messageId/stream', generationLimiter, async (req, res, next) => {
@@ -313,10 +324,8 @@ router.put('/:id/messages/:messageId/stream', generationLimiter, async (req, res
   if (!target || target.status !== 'complete') {
     return res.status(404).json({ error: 'MESSAGE_NOT_FOUND', message: '可编辑的用户消息不存在。' });
   }
-  if (!config.aiConfigured) return next(new ProviderNotConfiguredError());
-  if (parsed.data.modelId && parsed.data.modelId !== config.aiModel) {
-    return res.status(404).json({ error: 'MODEL_NOT_FOUND', message: '所选模型未在服务端启用。' });
-  }
+  const selectedModel = selectModel(parsed.data.modelId, res, next);
+  if (!selectedModel) return;
 
   const generationKey = String(req.user.id);
   if (activeGenerations.has(generationKey)) {
@@ -393,6 +402,7 @@ router.put('/:id/messages/:messageId/stream', generationLimiter, async (req, res
   return streamAssistantResponse(res, prompt, pending, generationKey, {
     onSuccess: commitEdit,
     onFailure: discardPending,
+    modelId: selectedModel.id,
   });
 });
 
@@ -433,10 +443,8 @@ router.post('/:id/messages/:messageId/retry/stream', generationLimiter, async (r
     return res.status(409).json({ error: 'RETRY_CONTEXT_MISSING', message: '找不到这条回答对应的用户问题。' });
   }
 
-  if (!config.aiConfigured) return next(new ProviderNotConfiguredError());
-  if (parsed.data.modelId && parsed.data.modelId !== config.aiModel) {
-    return res.status(404).json({ error: 'MODEL_NOT_FOUND', message: '所选模型未在服务端启用。' });
-  }
+  const selectedModel = selectModel(parsed.data.modelId, res, next);
+  if (!selectedModel) return;
 
   const generationKey = String(req.user.id);
   if (activeGenerations.has(generationKey)) {
@@ -487,6 +495,7 @@ router.post('/:id/messages/:messageId/retry/stream', generationLimiter, async (r
   return streamAssistantResponse(res, prompt, pending, generationKey, {
     onSuccess: commitRetry,
     onFailure: discardPending,
+    modelId: selectedModel.id,
   });
 });
 

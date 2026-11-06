@@ -1076,3 +1076,103 @@ test('users can link their own conversations to projects but cannot cross-link a
   await owner.get('/api/v1/conversations/' + ownerConversation.body.conversation.id)
     .set(originHeaders).expect(200);
 });
+
+
+test('multi-provider model registry keeps API keys private and routes the selected model upstream', async () => {
+  let capturedRequest = null;
+  let capturedAuthorization = null;
+  providerServer = createServer((incoming, outgoing) => {
+    let body = '';
+    capturedAuthorization = incoming.headers.authorization;
+    incoming.setEncoding('utf8');
+    incoming.on('data', (chunk) => { body += chunk; });
+    incoming.on('end', () => {
+      capturedRequest = JSON.parse(body);
+      outgoing.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      outgoing.end('data: {"choices":[{"delta":{"content":"Model selected correctly"}}]}\n\ndata: [DONE]\n\n');
+    });
+  });
+  await new Promise((resolve) => providerServer.listen(0, '127.0.0.1', resolve));
+
+  const previous = {
+    aiBaseUrl: config.aiBaseUrl,
+    aiApiKey: config.aiApiKey,
+    aiModel: config.aiModel,
+    aiProvidersJson: config.aiProvidersJson,
+    aiDefaultModelId: config.aiDefaultModelId,
+  };
+  config.aiBaseUrl = '';
+  config.aiApiKey = '';
+  config.aiModel = '';
+  config.aiProvidersJson = JSON.stringify([
+    {
+      id: 'local-test',
+      name: 'Local Test Provider',
+      baseUrl: 'http://127.0.0.1:' + providerServer.address().port + '/v1',
+      apiKey: 'private-local-provider-key',
+      models: [
+        { id: 'upstream-chat-v2', name: 'Local Chat V2', capabilities: ['chat', 'text'], contextLimit: 32768 },
+        { id: 'disabled-model', name: 'Disabled Model', enabled: false },
+      ],
+    },
+    {
+      id: 'remote-test',
+      name: 'Remote Test Provider',
+      baseUrl: 'https://models.example.test/v1',
+      apiKey: 'private-remote-provider-key',
+      models: [{ id: 'remote-chat', name: 'Remote Chat' }],
+    },
+  ]);
+  config.aiDefaultModelId = 'local-test:upstream-chat-v2';
+
+  try {
+    const catalog = await request(app).get('/api/v1/models').expect(200);
+    assert.equal(catalog.body.configured, true);
+    assert.equal(catalog.body.defaultModelId, 'local-test:upstream-chat-v2');
+    assert.equal(catalog.body.models.length, 3);
+    assert.equal(catalog.body.models.find((model) => model.id === 'local-test:disabled-model').selectable, false);
+    assert.equal(catalog.body.models.find((model) => model.id === 'remote-test:remote-chat').selectable, true);
+    const publicCatalog = JSON.stringify(catalog.body);
+    assert.equal(publicCatalog.includes('private-local-provider-key'), false);
+    assert.equal(publicCatalog.includes('private-remote-provider-key'), false);
+    assert.equal(JSON.stringify(await (await request(app).get('/api/v1/health').expect(200)).body).includes('private-local-provider-key'), false);
+
+    const agent = request.agent(app);
+    await agent.post('/api/v1/auth/register').set(originHeaders).send({
+      email: 'model-registry@example.com',
+      name: 'Model Registry Tester',
+      password: 'model-registry-test-password',
+    }).expect(201);
+    const created = await agent.post('/api/v1/conversations').set(originHeaders)
+      .send({ title: 'Selected model test' }).expect(201);
+
+    const response = await agent.post('/api/v1/conversations/' + created.body.conversation.id + '/messages/stream')
+      .set(originHeaders)
+      .send({ content: 'Use the selected model', modelId: 'local-test:upstream-chat-v2' })
+      .buffer(true)
+      .parse((incoming, callback) => {
+        let result = '';
+        incoming.setEncoding('utf8');
+        incoming.on('data', (chunk) => { result += chunk; });
+        incoming.on('end', () => callback(null, result));
+        incoming.on('error', callback);
+      }).expect(200);
+
+    assert.match(response.body, /Model selected correctly/);
+    assert.equal(capturedAuthorization, 'Bearer private-local-provider-key');
+    assert.equal(capturedRequest.model, 'upstream-chat-v2');
+
+    await agent.post('/api/v1/conversations/' + created.body.conversation.id + '/messages/stream')
+      .set(originHeaders)
+      .send({ content: 'Disabled models must not run', modelId: 'local-test:disabled-model' })
+      .expect(404);
+  } finally {
+    config.aiBaseUrl = previous.aiBaseUrl;
+    config.aiApiKey = previous.aiApiKey;
+    config.aiModel = previous.aiModel;
+    config.aiProvidersJson = previous.aiProvidersJson;
+    config.aiDefaultModelId = previous.aiDefaultModelId;
+    await new Promise((resolve) => providerServer.close(resolve));
+    providerServer = null;
+  }
+});
