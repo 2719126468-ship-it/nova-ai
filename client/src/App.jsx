@@ -13,6 +13,8 @@ const Studio = lazy(() => import('./pages/Studio').then((module) => ({ default: 
 const StudioEditor = lazy(() => import('./pages/Studio').then((module) => ({ default: module.StudioEditor })));
 const Documents = lazy(() => import('./pages/Documents').then((module) => ({ default: module.Documents })));
 const DocumentEditor = lazy(() => import('./pages/Documents').then((module) => ({ default: module.DocumentEditor })));
+const ProjectContext = lazy(() => import('./pages/ProjectContext').then((module) => ({ default: module.ProjectContextIndex })));
+const ProjectContextEditor = lazy(() => import('./pages/ProjectContext').then((module) => ({ default: module.ProjectContextEditor })));
 const Account = lazy(() => import('./pages/Account'));
 const Models = lazy(() => import('./pages/Models'));
 const Pricing = lazy(() => import('./pages/Pricing'));
@@ -46,6 +48,8 @@ export default function App() {
             <Route path="studio/:id" element={<StudioEditor />} />
             <Route path="documents" element={<Documents />} />
             <Route path="documents/:id" element={<DocumentEditor />} />
+            <Route path="project-context" element={<ProjectContext />} />
+            <Route path="project-context/:id" element={<ProjectContextEditor />} />
             <Route path="account" element={<Account />} />
           </Route>
           <Route element={<AdminRoute />}>
