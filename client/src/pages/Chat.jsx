@@ -114,7 +114,7 @@ export default function Chat() {
     setDraft('');
   }
 
-  async function submitMessage(contentValue, editId = null) {
+  async function submitMessage(contentValue, editId = null, retryId = null) {
     const content = contentValue.trim();
     if (!content || sending) return;
     if (editId && !activeId) {
@@ -129,6 +129,7 @@ export default function Chat() {
     const pendingId = 'pending-assistant-' + (++pendingSequence.current);
     let completed = false;
     const isEditing = Boolean(editId);
+    const isRetry = Boolean(retryId);
 
     try {
       let conversationId = activeId;
@@ -142,7 +143,9 @@ export default function Chat() {
 
       const streamPath = editId
         ? '/api/v1/conversations/' + conversationId + '/messages/' + editId + '/stream'
-        : '/api/v1/conversations/' + conversationId + '/messages/stream';
+        : retryId
+          ? '/api/v1/conversations/' + conversationId + '/messages/' + retryId + '/retry/stream'
+          : '/api/v1/conversations/' + conversationId + '/messages/stream';
       for await (const packet of apiStream(streamPath, {
         method: editId ? 'PUT' : 'POST',
         body: json({ content }),
@@ -159,6 +162,12 @@ export default function Chat() {
               return [...updated, { id: pendingId, role: 'assistant', content: '', status: 'streaming' }];
             });
             setEditingMessageId(null);
+          } else if (retryId) {
+            setMessages((current) => {
+              const targetIndex = current.findIndex((message) => String(message.id) === String(retryId));
+              const retained = targetIndex < 0 ? current : current.slice(0, targetIndex);
+              return [...retained, { id: pendingId, role: 'assistant', content: '', status: 'streaming' }];
+            });
           } else {
             setMessages((current) => [...current, packet.data.userMessage, { id: pendingId, role: 'assistant', content: '', status: 'streaming' }]);
           }
@@ -173,17 +182,19 @@ export default function Chat() {
           completed = true;
           setMessages((current) => current.map((message) => message.id === pendingId ? packet.data.assistantMessage : message));
           setEditingMessageId(null);
-          setDraft('');
+          if (!isRetry) setDraft('');
           await loadConversations();
         } else if (packet.event === 'message_error' || packet.event === 'message_cancelled') {
           completed = true;
           const cancelled = packet.event === 'message_cancelled';
           setError(packet.data?.message || (cancelled ? '生成已取消。' : '模型服务暂时无法完成请求。'));
-          if (isEditing) {
+          if (isEditing || isRetry) {
             const latest = await api('/api/v1/conversations/' + conversationId);
             setMessages(latest.messages);
-            setEditingMessageId(editId);
-            setDraft(content);
+            if (isEditing) {
+              setEditingMessageId(editId);
+              setDraft(content);
+            }
           } else {
             setMessages((current) => current.map((message) => message.id === pendingId
               ? { ...message, status: cancelled ? 'cancelled' : 'failed', error_code: packet.data?.code || null }
@@ -192,15 +203,17 @@ export default function Chat() {
         }
       }
     } catch (e) {
-      if (e.name === 'AbortError' && isEditing) {
+      if (e.name === 'AbortError' && (isEditing || isRetry)) {
         try {
           await new Promise((resolve) => window.setTimeout(resolve, 120));
           const latest = await api('/api/v1/conversations/' + activeId);
           setMessages(latest.messages);
-          setEditingMessageId(editId);
-          setDraft(content);
+          if (isEditing) {
+            setEditingMessageId(editId);
+            setDraft(content);
+          }
         } catch {
-          setError('已停止重新生成；原对话会在下次打开时重新同步。');
+          setError('已停止生成；原对话会在下次打开时重新同步。');
         }
       } else if (e.name === 'AbortError') {
         setMessages((current) => current.map((message) => message.id === pendingId
@@ -228,8 +241,12 @@ export default function Chat() {
 
   function regenerateMessage(userMessage) {
     if (!userMessage?.id || sending) return;
-    setDraft(userMessage.content || '');
     void submitMessage(userMessage.content || '', userMessage.id);
+  }
+
+  function retryMessage(message, userMessage) {
+    if (!message?.id || !userMessage?.id || sending) return;
+    void submitMessage(userMessage.content || '', null, message.id);
   }
 
   const modelName = modelInfo?.models?.[0]?.name || (modelInfo ? '模型未配置' : 'NOVA Intelligence');
@@ -246,7 +263,7 @@ export default function Chat() {
     </aside>
     <section className="chat-main">
       <div className="chat-topbar"><div className="chat-topbar-left">{!sidebarOpen && <button className="icon-button" onClick={() => setSidebarOpen(true)} aria-label="展开侧边栏"><Menu size={18} /></button>}<div className="chat-model-badge"><span className="model-spark">✳</span><strong>{modelName}</strong><ChevronDown size={14} /></div><span className="chat-beta">PREVIEW</span></div><button className="chat-top-action" onClick={createConversation}><CirclePlus size={15} /> 新对话</button></div>
-      <div className="chat-scroll-area">{loading ? <Loading label="正在加载对话…" /> : messages.length === 0 ? <div className="chat-welcome"><div className="chat-welcome-symbol">✳</div><span className="chat-welcome-overline">NOVA INTELLIGENCE</span><h1>你好，{user?.name || '探索者'}。<br /><span>今天想从哪里开始？</span></h1><p>写下一个问题、一个想法，或者你正在尝试解决的事情。</p><div className="prompt-suggestions"><button onClick={() => setDraft('帮我把一个复杂想法拆解成可以执行的步骤。')}>⌁ <span>拆解一个复杂问题</span></button><button onClick={() => setDraft('帮我梳理一个新产品的定位和核心功能。')}>✳ <span>构思一个新产品</span></button><button onClick={() => setDraft('解释一个我最近正在学习的技术概念。')}>⌘ <span>理解一个技术概念</span></button></div></div> : <div className="message-thread">{messages.map((message, index) => <div className={'chat-message chat-message-' + message.role} key={message.id || (message.role + '-' + index)}><div className="message-avatar">{message.role === 'assistant' ? <span>✳</span> : <UserRound size={16} />}</div><div className="message-content"><div className="message-author">{message.role === 'assistant' ? 'NOVA' : user?.name || '你'}</div>{message.status && message.status !== 'complete' && <div className={'message-status message-status-' + message.status}>{message.status === 'streaming' ? '正在生成' : message.status === 'cancelled' ? '已停止生成' : '生成失败'}</div>}<div className="message-actions"><button type="button" onClick={() => copyMessage(message)} aria-label="复制消息" title="复制消息">{copiedMessageId === message.id ? <Check size={13} /> : <Copy size={13} />}<span>{copiedMessageId === message.id ? '已复制' : '复制'}</span></button>{!sending && message.role === 'user' && <button type="button" onClick={() => beginEditMessage(message)} aria-label="编辑消息" title="编辑消息"><Pencil size={13} /><span>编辑</span></button>}{!sending && index === messages.length - 1 && message.status === 'complete' && message.role === 'assistant' && messages[index - 1]?.role === 'user' && <button type="button" onClick={() => regenerateMessage(messages[index - 1])} aria-label="重新生成" title="重新生成"><RefreshCw size={13} /><span>重新生成</span></button>}</div><div className="markdown-body"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div></div></div>)}<div ref={endRef} /></div>}</div>
+      <div className="chat-scroll-area">{loading ? <Loading label="正在加载对话…" /> : messages.length === 0 ? <div className="chat-welcome"><div className="chat-welcome-symbol">✳</div><span className="chat-welcome-overline">NOVA INTELLIGENCE</span><h1>你好，{user?.name || '探索者'}。<br /><span>今天想从哪里开始？</span></h1><p>写下一个问题、一个想法，或者你正在尝试解决的事情。</p><div className="prompt-suggestions"><button onClick={() => setDraft('帮我把一个复杂想法拆解成可以执行的步骤。')}>⌁ <span>拆解一个复杂问题</span></button><button onClick={() => setDraft('帮我梳理一个新产品的定位和核心功能。')}>✳ <span>构思一个新产品</span></button><button onClick={() => setDraft('解释一个我最近正在学习的技术概念。')}>⌘ <span>理解一个技术概念</span></button></div></div> : <div className="message-thread">{messages.map((message, index) => <div className={'chat-message chat-message-' + message.role} key={message.id || (message.role + '-' + index)}><div className="message-avatar">{message.role === 'assistant' ? <span>✳</span> : <UserRound size={16} />}</div><div className="message-content"><div className="message-author">{message.role === 'assistant' ? 'NOVA' : user?.name || '你'}</div>{message.status && message.status !== 'complete' && <div className={'message-status message-status-' + message.status}>{message.status === 'streaming' ? '正在生成' : message.status === 'cancelled' ? '已停止生成' : '生成失败'}</div>}<div className="message-actions"><button type="button" onClick={() => copyMessage(message)} aria-label="复制消息" title="复制消息">{copiedMessageId === message.id ? <Check size={13} /> : <Copy size={13} />}<span>{copiedMessageId === message.id ? '已复制' : '复制'}</span></button>{!sending && message.role === 'user' && <button type="button" onClick={() => beginEditMessage(message)} aria-label="编辑消息" title="编辑消息"><Pencil size={13} /><span>编辑</span></button>}{!sending && index === messages.length - 1 && message.status === 'complete' && message.role === 'assistant' && messages[index - 1]?.role === 'user' && <button type="button" onClick={() => regenerateMessage(messages[index - 1])} aria-label="重新生成" title="重新生成"><RefreshCw size={13} /><span>重新生成</span></button>}{!sending && index === messages.length - 1 && message.role === 'assistant' && ['failed', 'cancelled'].includes(message.status) && messages[index - 1]?.role === 'user' && <button type="button" onClick={() => retryMessage(message, messages[index - 1])} aria-label="重试回答" title="重试回答"><RefreshCw size={13} /><span>重试</span></button>}</div><div className="markdown-body"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div></div></div>)}<div ref={endRef} /></div>}</div>
       <div className="chat-composer-wrap"><ErrorNotice>{error}</ErrorNotice><form className="chat-composer" onSubmit={sendMessage}>{editingMessageId && <div className="composer-edit-hint">重新生成成功后，会删除这条消息后面的对话内容；失败或停止会保留原对话。</div>}<textarea value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={editingMessageId ? '编辑消息并重新生成…' : '向 NOVA 发送消息…'} rows={1} disabled={sending} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(e); } }} /><div className="composer-bottom"><span><Sparkles size={13} /> {modelInfo?.provider?.status === 'configured_unverified' ? '模型已配置 · 上游状态未验证' : '模型服务由服务器配置'}</span>{editingMessageId && !sending && <button className="composer-cancel" type="button" onClick={cancelEditMessage}>取消编辑</button>}{sending ? <button type="button" onClick={stopGeneration} aria-label="停止生成"><Square size={15} /></button> : <button type="submit" disabled={!draft.trim()} aria-label="发送消息"><Send size={17} /></button>}</div></form><div className="chat-disclaimer">NOVA 可能会出错。重要信息请自行核实。模型未配置时不会生成虚假回答。</div></div>
     </section>
   </main>;

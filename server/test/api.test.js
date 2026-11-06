@@ -886,3 +886,135 @@ test('editing a user message replaces that turn and deletes later conversation h
     providerServer = null;
   }
 });
+
+test('retrying a failed assistant message replaces it only after a successful response', async () => {
+  providerServer = createServer((incoming, outgoing) => {
+    let body = '';
+    incoming.setEncoding('utf8');
+    incoming.on('data', (chunk) => { body += chunk; });
+    incoming.on('end', () => {
+      providerRequest = JSON.parse(body);
+      outgoing.writeHead(200, { 'Content-Type': 'application/json' });
+      outgoing.end(JSON.stringify({ choices: [{ message: { content: 'Recovered assistant response' } }] }));
+    });
+  });
+  await new Promise((resolve) => providerServer.listen(0, '127.0.0.1', resolve));
+  const previous = {
+    aiBaseUrl: config.aiBaseUrl,
+    aiApiKey: config.aiApiKey,
+    aiModel: config.aiModel,
+  };
+  config.aiBaseUrl = 'http://127.0.0.1:' + providerServer.address().port + '/v1';
+  config.aiApiKey = 'retry-test-secret';
+  config.aiModel = 'mock-retry-model';
+
+  try {
+    const agent = request.agent(app);
+    await agent.post('/api/v1/auth/register').set(originHeaders).send({
+      email: 'message-retry@example.com',
+      name: 'Message Retry Tester',
+      password: 'message-retry-password-strong',
+    }).expect(201);
+    const created = await agent.post('/api/v1/conversations').set(originHeaders)
+      .send({ title: 'Retry response' }).expect(201);
+    const id = created.body.conversation.id;
+    const insert = db.prepare('INSERT INTO messages(conversation_id,role,content,status,error_code) VALUES(?,?,?,?,?)');
+    insert.run(id, 'user', 'original question', 'complete', null);
+    const failed = insert.run(id, 'assistant', 'partial broken output', 'failed', 'AI_PROVIDER_UNAVAILABLE');
+
+    const response = await agent.post(
+      '/api/v1/conversations/' + id + '/messages/' + failed.lastInsertRowid + '/retry/stream',
+    ).set(originHeaders).send({})
+      .buffer(true)
+      .parse((incoming, callback) => {
+        let result = '';
+        incoming.setEncoding('utf8');
+        incoming.on('data', (chunk) => { result += chunk; });
+        incoming.on('end', () => callback(null, result));
+        incoming.on('error', callback);
+      }).expect(200);
+
+    assert.match(response.body, /event: message_start/);
+    assert.match(response.body, /event: message_complete/);
+    assert.match(response.body, /Recovered assistant response/);
+    assert.deepEqual(
+      providerRequest.messages.map((message) => [message.role, message.content]),
+      [['user', 'original question']],
+    );
+    const saved = db.prepare(
+      'SELECT role,content,status,error_code FROM messages WHERE conversation_id=? ORDER BY id',
+    ).all(id);
+    assert.deepEqual(saved, [
+      { role: 'user', content: 'original question', status: 'complete', error_code: null },
+      { role: 'assistant', content: 'Recovered assistant response', status: 'complete', error_code: null },
+    ]);
+  } finally {
+    config.aiBaseUrl = previous.aiBaseUrl;
+    config.aiApiKey = previous.aiApiKey;
+    config.aiModel = previous.aiModel;
+    await new Promise((resolve) => providerServer.close(resolve));
+    providerServer = null;
+  }
+});
+
+test('failed assistant retry preserves the previous failed response', async () => {
+  providerServer = createServer((incoming, outgoing) => {
+    incoming.resume();
+    incoming.on('end', () => {
+      outgoing.writeHead(503, { 'Content-Type': 'application/json' });
+      outgoing.end(JSON.stringify({ error: 'private retry failure details' }));
+    });
+  });
+  await new Promise((resolve) => providerServer.listen(0, '127.0.0.1', resolve));
+  const previous = {
+    aiBaseUrl: config.aiBaseUrl,
+    aiApiKey: config.aiApiKey,
+    aiModel: config.aiModel,
+  };
+  config.aiBaseUrl = 'http://127.0.0.1:' + providerServer.address().port + '/v1';
+  config.aiApiKey = 'retry-failure-secret';
+  config.aiModel = 'mock-retry-failure-model';
+
+  try {
+    const agent = request.agent(app);
+    await agent.post('/api/v1/auth/register').set(originHeaders).send({
+      email: 'message-retry-failure@example.com',
+      name: 'Retry Failure Tester',
+      password: 'retry-failure-password-strong',
+    }).expect(201);
+    const created = await agent.post('/api/v1/conversations').set(originHeaders)
+      .send({ title: 'Retry failure' }).expect(201);
+    const id = created.body.conversation.id;
+    const insert = db.prepare('INSERT INTO messages(conversation_id,role,content,status,error_code) VALUES(?,?,?,?,?)');
+    insert.run(id, 'user', 'question to retry', 'complete', null);
+    const failed = insert.run(id, 'assistant', 'keep this failed response', 'failed', 'AI_TIMEOUT');
+
+    const response = await agent.post(
+      '/api/v1/conversations/' + id + '/messages/' + failed.lastInsertRowid + '/retry/stream',
+    ).set(originHeaders).send({})
+      .buffer(true)
+      .parse((incoming, callback) => {
+        let result = '';
+        incoming.setEncoding('utf8');
+        incoming.on('data', (chunk) => { result += chunk; });
+        incoming.on('end', () => callback(null, result));
+        incoming.on('error', callback);
+      }).expect(200);
+
+    assert.match(response.body, /event: message_error/);
+    assert.equal(response.body.includes('private retry failure details'), false);
+    const saved = db.prepare(
+      'SELECT role,content,status,error_code FROM messages WHERE conversation_id=? ORDER BY id',
+    ).all(id);
+    assert.deepEqual(saved, [
+      { role: 'user', content: 'question to retry', status: 'complete', error_code: null },
+      { role: 'assistant', content: 'keep this failed response', status: 'failed', error_code: 'AI_TIMEOUT' },
+    ]);
+  } finally {
+    config.aiBaseUrl = previous.aiBaseUrl;
+    config.aiApiKey = previous.aiApiKey;
+    config.aiModel = previous.aiModel;
+    await new Promise((resolve) => providerServer.close(resolve));
+    providerServer = null;
+  }
+});

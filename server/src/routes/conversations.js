@@ -396,6 +396,100 @@ router.put('/:id/messages/:messageId/stream', generationLimiter, async (req, res
   });
 });
 
+
+router.post('/:id/messages/:messageId/retry/stream', generationLimiter, async (req, res, next) => {
+  if (!isPositiveId(req.params.id) || !isPositiveId(req.params.messageId)) {
+    return res.status(400).json({ error: 'INVALID_ID', message: '对话或消息编号无效。' });
+  }
+  const parsed = streamMessageSchema.pick({ modelId: true }).safeParse(req.body || {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'VALIDATION_ERROR', message: '模型参数无效。' });
+  }
+
+  const conversationId = Number(req.params.id);
+  const messageId = Number(req.params.messageId);
+  if (!findConversation(conversationId, req.user.id)) {
+    return res.status(404).json({ error: 'NOT_FOUND', message: '对话不存在。' });
+  }
+
+  const target = db.prepare(
+    "SELECT id,role,content,status FROM messages WHERE id=? AND conversation_id=? AND role='assistant'",
+  ).get(messageId, conversationId);
+  if (!target || !['failed', 'cancelled'].includes(target.status)) {
+    return res.status(404).json({ error: 'MESSAGE_NOT_RETRYABLE', message: '只有失败或已停止的回答可以重试。' });
+  }
+
+  const latest = db.prepare(
+    'SELECT id FROM messages WHERE conversation_id=? ORDER BY id DESC LIMIT 1',
+  ).get(conversationId);
+  if (!latest || latest.id !== target.id) {
+    return res.status(409).json({ error: 'MESSAGE_NOT_LATEST', message: '只能重试当前对话的最后一条失败回答。' });
+  }
+
+  const userMessage = db.prepare(
+    "SELECT id,role,content,status,error_code,created_at FROM messages WHERE conversation_id=? AND id<? AND role='user' AND status='complete' ORDER BY id DESC LIMIT 1",
+  ).get(conversationId, messageId);
+  if (!userMessage) {
+    return res.status(409).json({ error: 'RETRY_CONTEXT_MISSING', message: '找不到这条回答对应的用户问题。' });
+  }
+
+  if (!config.aiConfigured) return next(new ProviderNotConfiguredError());
+  if (parsed.data.modelId && parsed.data.modelId !== config.aiModel) {
+    return res.status(404).json({ error: 'MODEL_NOT_FOUND', message: '所选模型未在服务端启用。' });
+  }
+
+  const generationKey = String(req.user.id);
+  if (activeGenerations.has(generationKey)) {
+    return res.status(409).json({ error: 'AI_GENERATION_IN_PROGRESS', message: '当前账号已有生成任务，请等待完成或停止后重试。' });
+  }
+  activeGenerations.add(generationKey);
+
+  const prompt = buildPrompt(conversationId, userMessage.content, userMessage.id);
+  if (!prompt) {
+    activeGenerations.delete(generationKey);
+    return res.status(413).json({ error: 'AI_INPUT_TOO_LARGE', message: '原始问题超过服务端配置的字符预算，无法重试。' });
+  }
+
+  let pending;
+  try {
+    const createPending = db.transaction(() => {
+      const assistantResult = db.prepare(
+        "INSERT INTO messages(conversation_id,role,content,status) VALUES(?,?,?,?)",
+      ).run(conversationId, 'assistant', '', 'streaming');
+      return {
+        userMessage,
+        assistantMessageId: assistantResult.lastInsertRowid,
+      };
+    });
+    pending = createPending();
+  } catch (error) {
+    activeGenerations.delete(generationKey);
+    return next(error);
+  }
+
+  const commitRetry = db.transaction((assistantContent) => {
+    db.prepare('DELETE FROM messages WHERE conversation_id=? AND id>=? AND id<>?')
+      .run(conversationId, messageId, pending.assistantMessageId);
+    db.prepare("UPDATE messages SET content=?,status='complete',error_code=NULL WHERE id=? AND conversation_id=?")
+      .run(assistantContent, pending.assistantMessageId, conversationId);
+    db.prepare('UPDATE conversations SET updated_at=CURRENT_TIMESTAMP WHERE id=?')
+      .run(conversationId);
+    return db.prepare(
+      'SELECT id,role,content,status,error_code,created_at FROM messages WHERE id=?',
+    ).get(pending.assistantMessageId);
+  });
+
+  const discardPending = () => {
+    db.prepare('DELETE FROM messages WHERE id=? AND conversation_id=?')
+      .run(pending.assistantMessageId, conversationId);
+  };
+
+  return streamAssistantResponse(res, prompt, pending, generationKey, {
+    onSuccess: commitRetry,
+    onFailure: discardPending,
+  });
+});
+
 router.delete('/:id', (req, res) => {
   if (!isPositiveId(req.params.id)) {
     return res.status(400).json({ error: 'INVALID_ID', message: '对话编号无效。' });

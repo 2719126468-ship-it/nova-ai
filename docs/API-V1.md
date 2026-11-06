@@ -55,6 +55,7 @@ All endpoints below require an authenticated session.
 | DELETE | /api/v1/conversations/:id | Delete a conversation and its messages |
 | POST | /api/v1/conversations/:id/messages/stream | Send a message and stream the assistant response |
 | PUT | /api/v1/conversations/:id/messages/:messageId/stream | Edit a previous user message and stream its replacement response |
+| POST | /api/v1/conversations/:id/messages/:messageId/retry/stream | Retry the latest failed/cancelled assistant response |
 
 The conversation owner is checked on every operation. A user cannot read, rename, send messages to, or delete another user's conversation.
 
@@ -84,6 +85,12 @@ Editing a user message changes the conversation branch from that point onward. O
 
 The original conversation remains intact while the replacement is being generated. If generation fails or is cancelled, the pending response is discarded and the old conversation branch is preserved, so the user can retry. The Chat UI only offers one-click Regenerate on the latest completed assistant message; editing an earlier user message displays a warning that later turns are removed only after successful regeneration.
 
+### Retrying a failed response
+
+Use `POST /api/v1/conversations/:id/messages/:messageId/retry/stream` for the latest assistant message when its status is `failed` or `cancelled`. The route resolves the immediately preceding completed user question and rebuilds context from completed history before that question.
+
+Only the last message in the conversation can be retried, so an older failure cannot silently erase later conversation turns. The original failed/cancelled response remains stored while the retry runs. On success, NOVA atomically deletes the old failed response and saves the replacement. On another failure or cancellation, the pending retry is discarded and the original failed response remains available. The Chat UI shows Retry only on the final failed/cancelled assistant message.
+
 ### SSE events
 
 Each event uses the standard event: and data: framing.
@@ -93,7 +100,7 @@ Each event uses the standard event: and data: framing.
 | message_start | userMessage, assistantMessageId, modelId | The user message and pending assistant message have been persisted |
 | message_delta | messageId, delta | A new text fragment is available |
 | message_complete | assistantMessage | The final assistant text has been saved |
-| message_error | messageId, code, message | Generation failed; any partial text is retained |
+| message_error | messageId, code, message | Generation failed; any partial text is retained (edit/retry operations preserve the previous conversation branch) |
 | message_cancelled | messageId, code, message | Generation was cancelled before completion |
 
 An error before response headers are sent is a normal JSON API error. An error after streaming begins is delivered as a message_error event.
