@@ -14,6 +14,13 @@ const emptyDraft = () => ({
   ], null, 2),
 });
 
+const contextSourceLabels = {
+  provider_reported: '上游回报',
+  admin_configured: '管理员配置（未验证）',
+  environment_configured: '服务器环境配置（未验证）',
+  unknown: '未知',
+};
+
 const healthLabels = {
   healthy: '已验证可访问',
   degraded: '上游受限',
@@ -260,8 +267,11 @@ export default function ProviderManagement() {
               const modelId = provider.id + ':' + model.id;
               const health = healthByModel[modelId];
               const publicModel = catalog?.models?.find((item) => item.id === modelId);
+              const contextLimit = health?.contextWindow?.tokens ?? publicModel?.contextLimit ?? model.contextLimit;
+              const contextSource = health?.contextWindow?.source || publicModel?.contextLimitSource
+                || (model.contextLimit ? (provider.readOnly ? 'environment_configured' : 'admin_configured') : 'unknown');
               return <div className="provider-model-row" key={model.id}>
-                <div><strong>{model.name || model.id}</strong><small>{model.id}{model.contextLimit ? ' · 配置参考值 ' + model.contextLimit.toLocaleString() : ' · 未填写上下文参考值'}</small></div>
+                <div><strong>{model.name || model.id}</strong><small>{model.id}{contextLimit ? ' · ' + contextLimit.toLocaleString() + ' tokens · ' + (contextSourceLabels[contextSource] || '未知来源') : ' · 上下文窗口未知'}</small></div>
                 <span className={'provider-model-status ' + (!model.enabled || !provider.enabled ? 'is-off' : '')}>{model.enabled && provider.enabled ? '已启用' : '已停用'}</span>
                 {publicModel?.selectable && <button type="button" onClick={() => checkModel(modelId)} disabled={Boolean(checkingModelId)}>{checkingModelId === modelId ? '检查中…' : healthLabels[health?.status || 'unknown']}</button>}
               </div>;
