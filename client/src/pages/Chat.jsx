@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, CirclePlus, Copy, History, Menu, MessageSquare, MoreHorizontal, PanelLeftClose, Pencil, RefreshCw, Send, Sparkles, Square, Trash2, UserRound } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { Check, ChevronDown, CirclePlus, Copy, FilePlus2, History, Menu, MessageSquare, MoreHorizontal, PanelLeftClose, Pencil, RefreshCw, Send, Sparkles, Square, Trash2, UserRound } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -67,6 +67,14 @@ export default function Chat() {
   const [versionsByMessage, setVersionsByMessage] = useState({});
   const [loadingVersionsId, setLoadingVersionsId] = useState(null);
   const [restoringVersionId, setRestoringVersionId] = useState(null);
+  const [saveDocumentDialog, setSaveDocumentDialog] = useState(null);
+  const [saveDocumentProjects, setSaveDocumentProjects] = useState([]);
+  const [saveDocumentTitle, setSaveDocumentTitle] = useState('');
+  const [saveDocumentProjectId, setSaveDocumentProjectId] = useState('');
+  const [loadingSaveDocumentProjects, setLoadingSaveDocumentProjects] = useState(false);
+  const [savingDocument, setSavingDocument] = useState(false);
+  const [saveDocumentError, setSaveDocumentError] = useState('');
+  const [savedDocumentsByMessage, setSavedDocumentsByMessage] = useState({});
   const endRef = useRef(null);
   const abortRef = useRef(null);
   const pendingSequence = useRef(0);
@@ -153,6 +161,73 @@ export default function Chat() {
       window.setTimeout(() => setCopiedMessageId((current) => current === message.id ? null : current), 1200);
     } catch {
       setError('复制失败。请检查浏览器剪贴板权限，或手动选择文本复制。');
+    }
+  }
+
+  async function openSaveDocumentDialog(message, messageIndex) {
+    if (!message?.id || message.role !== 'assistant' || message.status !== 'complete' || sending) return;
+    const precedingPrompt = messages.slice(0, messageIndex).reverse().find((item) => item.role === 'user');
+    const suggestedTitle = String(precedingPrompt?.content || '')
+      .replace(/[\r\n\t]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 100) || 'AI 回答';
+    setSaveDocumentDialog({ messageId: message.id, content: message.content || '' });
+    setSaveDocumentTitle(suggestedTitle);
+    setSaveDocumentProjectId('');
+    setSaveDocumentProjects([]);
+    setSaveDocumentError('');
+    setLoadingSaveDocumentProjects(true);
+    try {
+      const result = await api('/api/v1/projects');
+      setSaveDocumentProjects(result.projects || []);
+    } catch (cause) {
+      setSaveDocumentError('项目列表读取失败：' + cause.message);
+    } finally {
+      setLoadingSaveDocumentProjects(false);
+    }
+  }
+
+  async function saveAssistantDocument() {
+    if (!saveDocumentDialog || savingDocument) return;
+    const title = saveDocumentTitle.trim();
+    const content = saveDocumentDialog.content;
+    if (!title) {
+      setSaveDocumentError('请先填写文档标题。');
+      return;
+    }
+    if (title.length > 120) {
+      setSaveDocumentError('文档标题不能超过 120 个字符。');
+      return;
+    }
+    if (content.length > 200000) {
+      setSaveDocumentError('这条回答超过文档 200000 字符的保存上限，请先缩短回答内容。');
+      return;
+    }
+    setSavingDocument(true);
+    setSaveDocumentError('');
+    try {
+      const result = await api('/api/v1/documents', {
+        method: 'POST',
+        body: json({
+          title,
+          content,
+          projectId: saveDocumentProjectId ? Number(saveDocumentProjectId) : null,
+        }),
+      });
+      setSavedDocumentsByMessage((current) => ({
+        ...current,
+        [saveDocumentDialog.messageId]: {
+          id: result.document.id,
+          title: result.document.title,
+        },
+      }));
+      setSaveDocumentDialog(null);
+      setSaveDocumentError('');
+    } catch (cause) {
+      setSaveDocumentError(cause.message || '文档保存失败，请重试。');
+    } finally {
+      setSavingDocument(false);
     }
   }
 
@@ -365,7 +440,36 @@ export default function Chat() {
     </aside>
     <section className="chat-main">
       <div className="chat-topbar"><div className="chat-topbar-left">{!sidebarOpen && <button className="icon-button" onClick={() => setSidebarOpen(true)} aria-label="展开侧边栏"><Menu size={18} /></button>}<div className="chat-model-badge"><span className="model-spark">✳</span>{selectableModels.length ? <select className="chat-model-select" aria-label="选择模型" value={selectedModel?.id || ''} onChange={(event) => setSelectedModelId(event.target.value)} disabled={sending}>{selectableModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}</select> : <strong>{modelName}</strong>}<ChevronDown size={14} /></div><span className="chat-beta">PREVIEW</span></div><button className="chat-top-action" onClick={createConversation}><CirclePlus size={15} /> 新对话</button></div>
-      <div className="chat-scroll-area">{loading ? <Loading label="正在加载对话…" /> : messages.length === 0 ? <div className="chat-welcome"><div className="chat-welcome-symbol">✳</div><span className="chat-welcome-overline">NOVA INTELLIGENCE</span><h1>你好，{user?.name || '探索者'}。<br /><span>今天想从哪里开始？</span></h1><p>写下一个问题、一个想法，或者你正在尝试解决的事情。</p><div className="prompt-suggestions"><button onClick={() => setDraft('帮我把一个复杂想法拆解成可以执行的步骤。')}>⌁ <span>拆解一个复杂问题</span></button><button onClick={() => setDraft('帮我梳理一个新产品的定位和核心功能。')}>✳ <span>构思一个新产品</span></button><button onClick={() => setDraft('解释一个我最近正在学习的技术概念。')}>⌘ <span>理解一个技术概念</span></button></div></div> : <div className="message-thread">{messages.map((message, index) => <div className={'chat-message chat-message-' + message.role} key={message.id || (message.role + '-' + index)}><div className="message-avatar">{message.role === 'assistant' ? <span>✳</span> : <UserRound size={16} />}</div><div className="message-content"><div className="message-author">{message.role === 'assistant' ? 'NOVA' : user?.name || '你'}</div>{message.status && message.status !== 'complete' && <div className={'message-status message-status-' + message.status}>{message.status === 'streaming' ? '正在生成' : message.status === 'cancelled' ? '已停止生成' : '生成失败'}</div>}<div className="message-actions"><button type="button" onClick={() => copyMessage(message)} aria-label="复制消息" title="复制消息">{copiedMessageId === message.id ? <Check size={13} /> : <Copy size={13} />}<span>{copiedMessageId === message.id ? '已复制' : '复制'}</span></button>{!sending && message.role === 'user' && <button type="button" onClick={() => beginEditMessage(message)} aria-label="编辑消息" title="编辑消息"><Pencil size={13} /><span>编辑</span></button>}{!sending && index === messages.length - 1 && message.status === 'complete' && message.role === 'assistant' && messages[index - 1]?.role === 'user' && <button type="button" onClick={() => regenerateMessage(messages[index - 1])} aria-label="重新生成" title="重新生成"><RefreshCw size={13} /><span>重新生成</span></button>}{!sending && index === messages.length - 1 && message.role === 'assistant' && ['failed', 'cancelled'].includes(message.status) && messages[index - 1]?.role === 'user' && <button type="button" onClick={() => retryMessage(message, messages[index - 1])} aria-label="重试回答" title="重试回答"><RefreshCw size={13} /><span>重试</span></button>}{!sending && message.role === 'assistant' && (message.version_count || 0) > 0 && <button type="button" onClick={() => toggleMessageVersions(message)} aria-expanded={versionMessageId === message.id} aria-label="查看回答历史版本" title="查看回答历史版本"><History size={13} /><span>版本 {message.version_count}</span></button>}</div>{versionMessageId === message.id && <div className="message-version-panel"><div className="message-version-heading"><History size={13} /><span>历史回答版本</span></div>{loadingVersionsId === message.id ? <div className="message-version-empty">正在读取版本…</div> : (versionsByMessage[message.id] || []).length ? (versionsByMessage[message.id] || []).map((version) => <div className="message-version-item" key={version.id}><div className="message-version-meta"><span>{version.source === 'edit_regeneration' ? '编辑前' : version.source === 'retry' ? '重试前' : '恢复前'}</span><time>{new Date(String(version.created_at).replace(' ', 'T') + 'Z').toLocaleString()}</time></div><div className="message-version-preview">{version.content || '（空回答）'}</div><button type="button" className="message-version-restore" disabled={sending || Boolean(restoringVersionId)} onClick={() => restoreAnswerVersion(message, version)}>{restoringVersionId === version.id ? '恢复中…' : '恢复此版本'}</button></div>) : <div className="message-version-empty">暂无历史版本。</div>}</div>}<div className="markdown-body">{/(^|\n)\s*`{3}/.test(message.content || '') ? (
+      {saveDocumentDialog && <div className="chat-document-dialog-overlay">
+        <section className="chat-document-dialog" role="dialog" aria-modal="true" aria-labelledby="chat-document-dialog-title">
+          <div className="chat-document-dialog-heading">
+            <div><span className="eyebrow">NOVA WORKSPACE / DOCUMENTS</span><h2 id="chat-document-dialog-title">保存 AI 回答</h2></div>
+            <button type="button" className="chat-document-dialog-close" onClick={() => setSaveDocumentDialog(null)} disabled={savingDocument} aria-label="关闭保存窗口">×</button>
+          </div>
+          <p className="chat-document-dialog-description">将这条完整 Markdown 回答保存到你的私人文档库。保存后仍可继续编辑。</p>
+          <label className="chat-document-dialog-field">
+            <span>文档标题</span>
+            <input value={saveDocumentTitle} onChange={(event) => setSaveDocumentTitle(event.target.value)} maxLength={120} autoFocus placeholder="为这篇文档命名…" />
+          </label>
+          <label className="chat-document-dialog-field">
+            <span>保存到项目</span>
+            <select value={saveDocumentProjectId} onChange={(event) => setSaveDocumentProjectId(event.target.value)} disabled={loadingSaveDocumentProjects || savingDocument}>
+              <option value="">个人文档（不关联项目）</option>
+              {saveDocumentProjects.map((project) => <option key={project.id} value={String(project.id)}>{project.title}</option>)}
+            </select>
+            {loadingSaveDocumentProjects && <small>正在读取你的项目…</small>}
+          </label>
+          {saveDocumentDialog.content.length > 200000 && <p className="chat-document-dialog-error" role="alert">回答超过 Documents 的 200000 字符限制，无法直接保存。</p>}
+          {saveDocumentError && <p className="chat-document-dialog-error" role="alert">{saveDocumentError}</p>}
+          <div className="chat-document-dialog-actions">
+            <button type="button" onClick={() => setSaveDocumentDialog(null)} disabled={savingDocument}>取消</button>
+            <button type="button" className="primary" onClick={saveAssistantDocument} disabled={savingDocument || loadingSaveDocumentProjects || !saveDocumentTitle.trim() || saveDocumentDialog.content.length > 200000}>
+              {savingDocument ? '正在保存…' : '保存到 Documents'}
+            </button>
+          </div>
+        </section>
+      </div>}
+      <div className="chat-scroll-area">{loading ? <Loading label="正在加载对话…" /> : messages.length === 0 ? <div className="chat-welcome"><div className="chat-welcome-symbol">✳</div><span className="chat-welcome-overline">NOVA INTELLIGENCE</span><h1>你好，{user?.name || '探索者'}。<br /><span>今天想从哪里开始？</span></h1><p>写下一个问题、一个想法，或者你正在尝试解决的事情。</p><div className="prompt-suggestions"><button onClick={() => setDraft('帮我把一个复杂想法拆解成可以执行的步骤。')}>⌁ <span>拆解一个复杂问题</span></button><button onClick={() => setDraft('帮我梳理一个新产品的定位和核心功能。')}>✳ <span>构思一个新产品</span></button><button onClick={() => setDraft('解释一个我最近正在学习的技术概念。')}>⌘ <span>理解一个技术概念</span></button></div></div> : <div className="message-thread">{messages.map((message, index) => <div className={'chat-message chat-message-' + message.role} key={message.id || (message.role + '-' + index)}><div className="message-avatar">{message.role === 'assistant' ? <span>✳</span> : <UserRound size={16} />}</div><div className="message-content"><div className="message-author">{message.role === 'assistant' ? 'NOVA' : user?.name || '你'}</div>{message.status && message.status !== 'complete' && <div className={'message-status message-status-' + message.status}>{message.status === 'streaming' ? '正在生成' : message.status === 'cancelled' ? '已停止生成' : '生成失败'}</div>}<div className="message-actions"><button type="button" onClick={() => copyMessage(message)} aria-label="复制消息" title="复制消息">{copiedMessageId === message.id ? <Check size={13} /> : <Copy size={13} />}<span>{copiedMessageId === message.id ? '已复制' : '复制'}</span></button>{!sending && message.role === 'user' && <button type="button" onClick={() => beginEditMessage(message)} aria-label="编辑消息" title="编辑消息"><Pencil size={13} /><span>编辑</span></button>}{!sending && index === messages.length - 1 && message.status === 'complete' && message.role === 'assistant' && messages[index - 1]?.role === 'user' && <button type="button" onClick={() => regenerateMessage(messages[index - 1])} aria-label="重新生成" title="重新生成"><RefreshCw size={13} /><span>重新生成</span></button>}{!sending && index === messages.length - 1 && message.role === 'assistant' && ['failed', 'cancelled'].includes(message.status) && messages[index - 1]?.role === 'user' && <button type="button" onClick={() => retryMessage(message, messages[index - 1])} aria-label="重试回答" title="重试回答"><RefreshCw size={13} /><span>重试</span></button>}{!sending && message.role === 'assistant' && (message.version_count || 0) > 0 && <button type="button" onClick={() => toggleMessageVersions(message)} aria-expanded={versionMessageId === message.id} aria-label="查看回答历史版本" title="查看回答历史版本"><History size={13} /><span>版本 {message.version_count}</span></button>}{!sending && message.role === 'assistant' && message.status === 'complete' && (savedDocumentsByMessage[message.id] ? <Link className="message-action-link" to={'/documents/' + savedDocumentsByMessage[message.id].id}>打开文档</Link> : <button type="button" onClick={() => openSaveDocumentDialog(message, index)} aria-label="保存回答为文档" title="保存回答为文档"><FilePlus2 size={13} /><span>保存为文档</span></button>)}</div>{versionMessageId === message.id && <div className="message-version-panel"><div className="message-version-heading"><History size={13} /><span>历史回答版本</span></div>{loadingVersionsId === message.id ? <div className="message-version-empty">正在读取版本…</div> : (versionsByMessage[message.id] || []).length ? (versionsByMessage[message.id] || []).map((version) => <div className="message-version-item" key={version.id}><div className="message-version-meta"><span>{version.source === 'edit_regeneration' ? '编辑前' : version.source === 'retry' ? '重试前' : '恢复前'}</span><time>{new Date(String(version.created_at).replace(' ', 'T') + 'Z').toLocaleString()}</time></div><div className="message-version-preview">{version.content || '（空回答）'}</div><button type="button" className="message-version-restore" disabled={sending || Boolean(restoringVersionId)} onClick={() => restoreAnswerVersion(message, version)}>{restoringVersionId === version.id ? '恢复中…' : '恢复此版本'}</button></div>) : <div className="message-version-empty">暂无历史版本。</div>}</div>}<div className="markdown-body">{/(^|\n)\s*`{3}/.test(message.content || '') ? (
           <Suspense fallback={<ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>}>
             <HighlightedMarkdown content={message.content} />
           </Suspense>

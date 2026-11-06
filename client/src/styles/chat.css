@@ -267,3 +267,135 @@
   line-height: 1.65;
   overflow-wrap: anywhere;
 }
+
+
+/* Save an assistant answer into the private Documents workspace. */
+.message-actions .message-action-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 8px;
+  text-decoration: none;
+}
+.message-actions .message-action-link:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+.chat-document-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(12, 14, 19, .48);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+.chat-document-dialog {
+  width: min(100%, 470px);
+  max-height: min(88vh, 680px);
+  overflow-y: auto;
+  padding: 23px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, .2);
+}
+.chat-document-dialog-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.chat-document-dialog-heading h2 {
+  margin: 7px 0 0;
+  font-size: 21px;
+  letter-spacing: -.6px;
+}
+.chat-document-dialog-close {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+}
+.chat-document-dialog-close:hover:not(:disabled) { color: var(--ink); border-color: var(--line-strong); }
+.chat-document-dialog-description {
+  margin: 12px 0 20px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.75;
+}
+.chat-document-dialog-field {
+  display: grid;
+  gap: 7px;
+  margin: 0 0 15px;
+}
+.chat-document-dialog-field > span {
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 650;
+}
+.chat-document-dialog-field input,
+.chat-document-dialog-field select {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  outline: 0;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+}
+.chat-document-dialog-field input:focus,
+.chat-document-dialog-field select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.chat-document-dialog-field small { color: var(--muted); font-size: 9px; }
+.chat-document-dialog-error {
+  margin: 0 0 13px;
+  color: #b45b5b;
+  font-size: 10px;
+  line-height: 1.6;
+}
+.chat-document-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.chat-document-dialog-actions button {
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 10px;
+}
+.chat-document-dialog-actions button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: white;
+}
+.chat-document-dialog-actions button:disabled,
+.chat-document-dialog-close:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 520px) {
+  .chat-document-dialog { padding: 19px 16px; border-radius: 9px; }
+  .chat-document-dialog-heading h2 { font-size: 19px; }
+  .chat-document-dialog-actions button { flex: 1; }
+}
