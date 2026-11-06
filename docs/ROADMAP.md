@@ -68,3 +68,6 @@ V0.1 已进入可验证的流式聊天阶段：版本化 API、SQLite 消息状�
 
 
 移动端性能进展：路由页面已通过 React.lazy 按需加载，CI 构建的入口 JS 为 276.17 kB（gzip 88.45 kB），共享库 163.12 kB（gzip 48.91 kB），Vite 不再报告超过 500 kB 的 chunk。尚未完成真实 Android 浏览器端到端回归。
+
+
+Projects delivery update (2026-11-06): project-conversation migration v2, owner-scoped link/list/unlink APIs, Studio association management, and direct opening of a selected conversation in Chat are implemented. CI verifies cross-account rejection and passes 23 API tests. Project instructions, richer project context, and Documents remain later work.
