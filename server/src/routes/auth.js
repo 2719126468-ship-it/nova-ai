@@ -115,7 +115,7 @@ router.get('/export', requireAuth, (req, res, next) => {
       'Content-Disposition': 'attachment; filename="nova-account-export-' + userId + '.json"',
     });
     res.json({
-      schemaVersion: 3,
+      schemaVersion: 4,
       exportedAt: new Date().toISOString(),
       account,
       projects,
