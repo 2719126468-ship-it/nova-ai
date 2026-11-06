@@ -111,6 +111,7 @@ function buildPrompt(conversationId, currentContent, model, beforeMessageId = nu
     tokenizer: currentEstimate.tokenizer,
     tokenEstimateSource: currentEstimate.source,
     outputReserveTokens: config.aiContextOutputReserve,
+    outputLimitEnforced: model.maxTokensParameter !== 'none',
     safetyMarginPercent: contextWindowTokens === null ? null : config.aiContextSafetyMarginPercent,
     currentMessagePreserved: true,
     historyTruncated: false,
