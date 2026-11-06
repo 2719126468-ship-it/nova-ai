@@ -20,11 +20,6 @@ export function Documents() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
 
-  const load = useCallback(async () => {
-    const result = await api('/api/v1/documents?limit=100');
-    setDocuments(result.documents || []);
-  }, []);
-
   useEffect(() => {
     let active = true;
     api('/api/v1/documents?limit=100')
@@ -135,10 +130,7 @@ export function DocumentEditor() {
   const versionRef = useRef(0);
   const savedSnapshotRef = useRef(EMPTY_SNAPSHOT);
   const savingRef = useRef(false);
-  const currentDraftRef = useRef({ title: '', content: '', projectId: null });
-
   const currentDraft = { title, content, projectId: projectId ? Number(projectId) : null };
-  currentDraftRef.current = currentDraft;
   const dirty = Boolean(document) && makeSnapshot(currentDraft) !== savedSnapshotRef.current;
 
   const loadDocument = useCallback(async () => {
@@ -222,7 +214,7 @@ export function DocumentEditor() {
   }, [conflict, numericId]);
 
   useEffect(() => {
-    if (!document || loading || !dirty || saving || conflict || !title.trim()) return undefined;
+    if (!document || loading || !dirty || saving || conflict || saveStatus === 'error' || !title.trim()) return undefined;
     setSaveStatus('pending');
     const timer = window.setTimeout(() => {
       const target = {
@@ -233,7 +225,7 @@ export function DocumentEditor() {
       persist(target);
     }, 850);
     return () => window.clearTimeout(timer);
-  }, [document, loading, dirty, title, content, projectId, saving, conflict, retryKey, persist]);
+  }, [document, loading, dirty, title, content, projectId, saving, conflict, saveStatus, retryKey, persist]);
 
   useEffect(() => {
     if (!dirty && saveStatus === 'pending') setSaveStatus('saved');
