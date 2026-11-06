@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'nova-ai-source.tar.gz'
+      - '.nova-ai-upload/part-*'
 
 permissions:
   contents: write
@@ -20,9 +20,16 @@ jobs:
       - name: Extract application source
         run: |
           mkdir -p /tmp/nova-ai-source
-          tar -xzf nova-ai-source.tar.gz -C /tmp/nova-ai-source
+          cat .nova-ai-upload/part-* | base64 --decode > /tmp/nova-ai-source.tar.gz
+          tar -xzf /tmp/nova-ai-source.tar.gz -C /tmp/nova-ai-source
           cp -a /tmp/nova-ai-source/. .
-          rm -f nova-ai-source.tar.gz
+          rm -rf .nova-ai-upload
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Run API tests
+        run: npm test
+      - name: Build web client
+        run: npm run build
       - name: Commit normal source tree
         run: |
           git config user.name 'github-actions[bot]'
