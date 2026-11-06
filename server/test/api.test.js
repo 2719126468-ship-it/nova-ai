@@ -811,6 +811,64 @@ test('model context budget keeps the newest complete turn and preserves current 
       'SELECT COUNT(*) AS count FROM messages WHERE conversation_id=? AND role=\'user\' AND content=?',
     ).get(id, tokenLimitedContent);
     assert.equal(savedTokenOversized.count, 0);
+
+    config.aiProvidersJson = JSON.stringify([{
+      id: 'context-test',
+      name: 'Context Test Provider',
+      baseUrl: 'http://127.0.0.1:' + providerServer.address().port + '/v1',
+      apiKey: 'context-test-secret',
+      enabled: true,
+      models: [{
+        id: 'gpt-4o-mini',
+        contextLimit: 1024,
+        tokenizer: 'o200k_base',
+        maxTokensParameter: 'max_tokens',
+      }],
+    }]);
+    config.aiDefaultModelId = 'context-test:gpt-4o-mini';
+    const compatibleResponse = await agent.post('/api/v1/conversations/' + id + '/messages/stream')
+      .set(originHeaders).send({ content: 'test max tokens parameter' })
+      .buffer(true)
+      .parse((incoming, callback) => {
+        let result = '';
+        incoming.setEncoding('utf8');
+        incoming.on('data', (chunk) => { result += chunk; });
+        incoming.on('end', () => callback(null, result));
+        incoming.on('error', callback);
+      }).expect(200);
+    assert.match(compatibleResponse.body, /"outputLimitEnforced":true/);
+    assert.equal(providerRequest.max_tokens, 128);
+    assert.equal(Object.hasOwn(providerRequest, 'max_completion_tokens'), false);
+    assert.equal(providerRequest.temperature, 0.7);
+
+    config.aiProvidersJson = JSON.stringify([{
+      id: 'context-test',
+      name: 'Context Test Provider',
+      baseUrl: 'http://127.0.0.1:' + providerServer.address().port + '/v1',
+      apiKey: 'context-test-secret',
+      enabled: true,
+      models: [{
+        id: 'deepseek-chat',
+        contextLimit: 1024,
+        tokenizer: 'none',
+        maxTokensParameter: 'none',
+      }],
+    }]);
+    config.aiDefaultModelId = 'context-test:deepseek-chat';
+    const noOutputCapResponse = await agent.post('/api/v1/conversations/' + id + '/messages/stream')
+      .set(originHeaders).send({ content: 'test provider without output cap' })
+      .buffer(true)
+      .parse((incoming, callback) => {
+        let result = '';
+        incoming.setEncoding('utf8');
+        incoming.on('data', (chunk) => { result += chunk; });
+        incoming.on('end', () => callback(null, result));
+        incoming.on('error', callback);
+      }).expect(200);
+    assert.match(noOutputCapResponse.body, /"outputLimitEnforced":false/);
+    assert.equal(Object.hasOwn(providerRequest, 'max_tokens'), false);
+    assert.equal(Object.hasOwn(providerRequest, 'max_completion_tokens'), false);
+    assert.equal(providerRequest.temperature, 0.7);
   } finally {
     config.aiBaseUrl = previous.aiBaseUrl;
     config.aiApiKey = previous.aiApiKey;
