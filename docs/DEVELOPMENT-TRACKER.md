@@ -7,7 +7,7 @@
 
 ## Progress
 
-**4 / 12 complete** · 1 in progress · 7 planned
+**5 / 12 complete** · 0 in progress · 7 planned
 
 The existing V0.1 implementation is the foundation. Do not rebuild or replace working authentication, chat, SSE, model routing, Studio, account, or data-lifecycle flows. Extend them incrementally.
 
@@ -19,7 +19,7 @@ The existing V0.1 implementation is the foundation. Do not rebuild or replace wo
 | B1-02 | P0 | Review and consolidate Provider error handling | **Complete** | Stable NOVA codes cover upstream authentication/permission, rejected requests, rate limits, outages, network failure, timeout, malformed JSON/SSE, empty response, stream errors, and cancellation; raw upstream details are redacted and regression-tested. |
 | B1-03 | P0 | Design and implement persistent Usage records | **Complete** | Migration v3 persists request lifecycle, provider/model, duration, error code, and upstream-reported tokens across JSON, SSE, edit, and retry paths. Export/deletion and admin-only aggregates are covered; unknown token/cost values remain null. |
 | B1-04 | P1 | Add code syntax highlighting and code-block copy | **Complete** | Common JS/TS, Python, JSON, Bash, CSS, XML/HTML, SQL, YAML, Markdown, Java, Go, and Diff grammars are registered selectively; per-block copy preserves only code text. Highlighter loads only for fenced-code messages and the mobile layout uses horizontal scrolling. |
-| B1-05 | P1 | Add assistant answer version history and undo | In progress | Preserve replaced assistant answers across successful edit/regeneration and retry; expose owner-scoped version listing and reversible restore; export/deletion and failure-safety tests pass. |
+| B1-05 | P1 | Add assistant answer version history and undo | **Complete** | Migration v4 stores prior assistant answers; successful edit/regeneration and retry preserve versions; failed/cancelled replacements leave prior content untouched; owner-scoped list/restore swaps preserve both answers; export/deletion and cross-account tests pass. |
 
 ### Batch 1 implementation notes
 
@@ -114,3 +114,14 @@ Documents comes before project context/file management, and Research follows tho
 - Added owner-scoped version list and restore APIs. Restore swaps the selected historical answer with the current answer so both remain recoverable.
 - Account export includes version content; deleting a parent message/account cascades the saved versions.
 - Added a Chat history panel with source/time/preview and a restore action. Final acceptance is pending CI validation.
+
+## 2026-11-07 — B1-05 completed
+
+- Added SQLite migration v4 for `message_versions` with parent-message cascading deletion and indexed version lookup.
+- Successful edit/regeneration archives the assistant answer that was replaced and carries forward older versions. Successful retry archives the former failed/cancelled answer in the new message history.
+- Failed/cancelled edit and retry paths leave the original visible answer and saved history untouched.
+- Added owner-scoped `GET /api/v1/conversations/:id/messages/:messageId/versions` and `POST /api/v1/conversations/:id/messages/:messageId/restore`. Restore swaps the selected historical answer with the current answer, retaining both so users can switch back and forth.
+- Chat now shows a history panel with source, timestamp, preview, and restore control only when saved versions exist.
+- Account export includes answer-version text; deleting the message/account cascades the associated versions.
+- CI run #55 passed: npm ci, all API integration tests, and the production web build.
+- Package version remains `0.1.0`; no release version change was made.
