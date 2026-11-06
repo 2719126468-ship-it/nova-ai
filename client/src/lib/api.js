@@ -1,5 +1,5 @@
 const fallbackApiUrl = window.location.protocol + '//' + window.location.hostname + ':4000';
-const API_URL = (import.meta.env.VITE_API_URL || fallbackApiUrl).replace(/\/+$/, '');
+export const API_URL = (import.meta.env.VITE_API_URL || fallbackApiUrl).replace(/\/+$/, '');
 
 function apiError(data, status) {
   const error = new Error(data?.message || data?.error || '请求失败（' + status + '）');
