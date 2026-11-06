@@ -43,7 +43,7 @@ Remaining model-system follow-ups: automatic model discovery, controlled failove
 |---|---|---|---|---|
 | B3-01 | P0 | Documents data model and API | **Complete** | Migration v7 adds user-owned Markdown documents with project association, ownership triggers, bounded content and versions; authenticated CRUD/list/search API, optimistic concurrency, account export/deletion lifecycle and regression tests; PR #11 CI run #71 passed API tests and production build; merged as 4866e8e. |
 | B3-02 | P0 | Documents editor and autosave | **Complete** | Protected Documents library and mobile-first Markdown editor, edit/preview, project association, 850 ms debounced autosave with optimistic version checks, save/error/conflict states, reload-latest and save-as-copy recovery, and .md download; PR #12 CI run #74 and post-merge main CI run #75 passed; merged to main. |
-| B3-03 | P1 | Project context and file management | **In progress** | Add project instructions and organized project materials; implement upload only with file type/signature, size, isolation, retention, and parsing controls. |
+| B3-03 | P1 | Project context and file management | **In progress** | Added versioned project instructions, owner-scoped text-file uploads/download/delete, atomic per-project quotas, explicit opt-in context inclusion, bounded project prompt injection and a responsive Project Context UI; API tests cover ownership, validation, and account lifecycle. Await CI and prompt-injection regression validation. | Add project instructions and organized project materials; implement upload only with file type/signature, size, isolation, retention, and parsing controls. |
 | B3-04 | P1 | Real Research search and citations | Planned | Use a real search provider, preserve source URLs/metadata, distinguish retrieved facts from model synthesis, and produce cited reports. |
 
 Target work loop: **Create project → chat with AI → generate document → save it into the project → continue editing.**
@@ -121,6 +121,14 @@ Documents comes before project context/file management, and Research follows tho
 - Autosave runs after an 850 ms typing pause; failures wait for a new edit or explicit retry. A 409 conflict preserves the local editor buffer and offers reload-latest or save-as-copy.
 - PR CI run #74 and post-merge main CI run #75 both passed API tests and the production client build.
 - B3-03 is in progress: project instructions and opt-in project materials, with upload size/type/content validation, account isolation, storage lifecycle and bounded context injection.
+
+## 2026-11-07 — B3-03 implementation in progress
+
+- Migration v8 adds versioned project instructions and owner-scoped project file records with content hashes, bounded sizes and database ownership triggers.
+- Added project context endpoints for instruction read/update, file list/upload/download/delete and explicit `includeInContext` opt-in. Upload quotas are enforced transactionally (20 files / 10 MiB per project; 2 MiB per file).
+- Linked project conversations now receive only same-account project instructions and explicitly selected file excerpts, bounded to 4 files / 12,000 characters. File excerpts are labelled untrusted reference material; project context is omitted rather than displacing the current user message when the budget cannot fit it.
+- Added a responsive Project Context UI for project instruction editing, upload, download, delete and context opt-in. Chat status reports whether project context/files were included, omitted or truncated.
+- Regression tests cover owner isolation, file validation/deduplication, project deletion, account export/deletion and prompt-context opt-in. B3-03 remains in progress pending CI.
 
 ## Completed work log
 
