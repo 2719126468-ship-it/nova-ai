@@ -125,7 +125,7 @@ const migrations = [
       `);
     },
   },
-,{
+  {
     version: 7,
     name: 'workspace-documents',
     up(database) {
