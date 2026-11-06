@@ -60,6 +60,26 @@ const migrations = [
         CREATE INDEX IF NOT EXISTS idx_ai_usage_status_created ON ai_usage(status, created_at DESC);
       `);
     },
+  },,
+
+  {
+    version: 4,
+    name: 'assistant-message-version-history',
+    up(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS message_versions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+          content TEXT NOT NULL,
+          status TEXT NOT NULL CHECK(status IN ('complete','failed','cancelled')),
+          error_code TEXT,
+          source TEXT NOT NULL CHECK(source IN ('edit_regeneration','retry','restore')),
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_message_versions_message_created
+          ON message_versions(message_id, created_at DESC, id DESC);
+      `);
+    },
   },
 ];
 
