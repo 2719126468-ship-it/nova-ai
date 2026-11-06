@@ -203,6 +203,7 @@ async function streamAssistantResponse(res, prompt, pending, generationKey, hook
     assistantMessageId: pending.assistantMessageId,
     modelId: hooks.modelId || getModelRegistry().defaultModelId,
     requestId: hooks.usageRecord?.requestId || null,
+    contextPolicy: hooks.contextPolicy || null,
   });
 
   try {
@@ -413,8 +414,8 @@ router.post('/:id/messages', generationLimiter, async (req, res, next) => {
     activeGenerations.add(generationKey);
 
     try {
-      const prompt = buildPrompt(conversationId, parsed.data.content);
-      if (!prompt) return res.status(413).json({ error: 'AI_INPUT_TOO_LARGE', message: '当前消息超过服务端配置的字符预算，请缩短后重试。' });
+      const promptResult = buildPrompt(conversationId, parsed.data.content, selectedModel);
+      if (!promptResult.prompt) return res.status(413).json({ ...promptResult.error, contextPolicy: promptResult.contextPolicy });
       const usageRecord = startUsageRecord({
         userId: req.user.id,
         providerId: selectedModel.providerId,
@@ -433,7 +434,7 @@ router.post('/:id/messages', generationLimiter, async (req, res, next) => {
       res.once('close', onClose);
 
       try {
-        const reply = await createAssistantReply(prompt, {
+        const reply = await createAssistantReply(promptResult.prompt, {
           signal: controller.signal,
           modelId: selectedModel.id,
           onUsage(usage) { providerUsage = usage; },
@@ -456,7 +457,7 @@ router.post('/:id/messages', generationLimiter, async (req, res, next) => {
         });
         const saved = save();
         finishUsageRecord(usageRecord, { status: 'succeeded', usage: providerUsage });
-        res.status(201).json({ ...saved, requestId: usageRecord.requestId });
+        res.status(201).json({ ...saved, requestId: usageRecord.requestId, contextPolicy: promptResult.contextPolicy });
       } catch (error) {
         const cancelled = clientDisconnected || error?.code === 'AI_REQUEST_CANCELLED';
         finishUsageRecord(usageRecord, {
@@ -500,11 +501,12 @@ router.post('/:id/messages/stream', generationLimiter, async (req, res, next) =>
   }
   activeGenerations.add(generationKey);
 
-  const prompt = buildPrompt(conversationId, parsed.data.content);
-  if (!prompt) {
+  const promptResult = buildPrompt(conversationId, parsed.data.content, selectedModel);
+  if (!promptResult.prompt) {
     activeGenerations.delete(generationKey);
-    return res.status(413).json({ error: 'AI_INPUT_TOO_LARGE', message: '当前消息超过服务端配置的字符预算，请缩短后重试。' });
+    return res.status(413).json({ ...promptResult.error, contextPolicy: promptResult.contextPolicy });
   }
+  const prompt = promptResult.prompt;
   const insert = db.prepare('INSERT INTO messages(conversation_id,role,content,status) VALUES(?,?,?,?)');
   const createPendingMessages = db.transaction(() => {
     const userResult = insert.run(conversationId, 'user', parsed.data.content, 'complete');
@@ -534,7 +536,7 @@ router.post('/:id/messages/stream', generationLimiter, async (req, res, next) =>
     activeGenerations.delete(generationKey);
     return next(error);
   }
-  return streamAssistantResponse(res, prompt, pending, generationKey, { modelId: selectedModel.id, usageRecord });
+  return streamAssistantResponse(res, prompt, pending, generationKey, { modelId: selectedModel.id, usageRecord, contextPolicy: promptResult.contextPolicy });
 });
 
 router.put('/:id/messages/:messageId/stream', generationLimiter, async (req, res, next) => {
@@ -566,11 +568,12 @@ router.put('/:id/messages/:messageId/stream', generationLimiter, async (req, res
   }
   activeGenerations.add(generationKey);
 
-  const prompt = buildPrompt(conversationId, parsed.data.content, messageId);
-  if (!prompt) {
+  const promptResult = buildPrompt(conversationId, parsed.data.content, selectedModel, messageId);
+  if (!promptResult.prompt) {
     activeGenerations.delete(generationKey);
-    return res.status(413).json({ error: 'AI_INPUT_TOO_LARGE', message: '当前消息超过服务端配置的字符预算，请缩短后重试。' });
+    return res.status(413).json({ ...promptResult.error, contextPolicy: promptResult.contextPolicy });
   }
+  const prompt = promptResult.prompt;
 
   const createPending = db.transaction(() => {
     const assistantResult = db.prepare(
@@ -661,6 +664,7 @@ router.put('/:id/messages/:messageId/stream', generationLimiter, async (req, res
     onFailure: discardPending,
     modelId: selectedModel.id,
     usageRecord,
+    contextPolicy: promptResult.contextPolicy,
   });
 });
 
@@ -710,11 +714,12 @@ router.post('/:id/messages/:messageId/retry/stream', generationLimiter, async (r
   }
   activeGenerations.add(generationKey);
 
-  const prompt = buildPrompt(conversationId, userMessage.content, userMessage.id);
-  if (!prompt) {
+  const promptResult = buildPrompt(conversationId, userMessage.content, selectedModel, userMessage.id);
+  if (!promptResult.prompt) {
     activeGenerations.delete(generationKey);
-    return res.status(413).json({ error: 'AI_INPUT_TOO_LARGE', message: '原始问题超过服务端配置的字符预算，无法重试。' });
+    return res.status(413).json({ ...promptResult.error, contextPolicy: promptResult.contextPolicy });
   }
+  const prompt = promptResult.prompt;
 
   let pending;
   try {
@@ -773,6 +778,7 @@ router.post('/:id/messages/:messageId/retry/stream', generationLimiter, async (r
     onFailure: discardPending,
     modelId: selectedModel.id,
     usageRecord,
+    contextPolicy: promptResult.contextPolicy,
   });
 });
 
