@@ -566,9 +566,9 @@ router.put('/:id/messages/:messageId/stream', generationLimiter, async (req, res
     db.prepare("UPDATE messages SET content=?,status='complete',error_code=NULL WHERE id=? AND conversation_id=?")
       .run(assistantContent, pending.assistantMessageId, conversationId);
     return db.prepare(
-      'SELECT id,role,content,status,error_code,created_at,
+      `SELECT id,role,content,status,error_code,created_at,
         (SELECT COUNT(*) FROM message_versions v WHERE v.message_id=messages.id) AS version_count
-      FROM messages WHERE id=?',
+      FROM messages WHERE id=?`,
     ).get(pending.assistantMessageId);
   });
 
@@ -678,9 +678,9 @@ router.post('/:id/messages/:messageId/retry/stream', generationLimiter, async (r
     db.prepare('UPDATE conversations SET updated_at=CURRENT_TIMESTAMP WHERE id=?')
       .run(conversationId);
     return db.prepare(
-      'SELECT id,role,content,status,error_code,created_at,
+      `SELECT id,role,content,status,error_code,created_at,
         (SELECT COUNT(*) FROM message_versions v WHERE v.message_id=messages.id) AS version_count
-      FROM messages WHERE id=?',
+      FROM messages WHERE id=?`,
     ).get(pending.assistantMessageId);
   });
 
