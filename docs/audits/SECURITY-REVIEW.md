@@ -24,7 +24,7 @@
 
 | ID | 风险 | 等级 | 当前依据 | 建议修复/验收 |
 |---|---|---|---|---|
-| SEC-01 | AI 资源缺少 per-user 配额与并发限制 | 高 | 当前是 API 通用 300 次/15 分钟、登录/注册 20 次/15 分钟，默认内存 Store；没有 AI 专属成本限制 | 增加用户+IP 双维限流、AI 并发、输入与上下文预算；429 行为自动化测试 |
+| SEC-01 | AI 资源治理仍不完整 | 高（多实例/公开生产前） | 已为消息接口增加每用户 20 次/15 分钟、每 IP 60 次/15 分钟限流，并限制每用户同时 1 个 AI 请求；使用 express-rate-limit 默认内存 Store，活跃并发集合也仅限单进程 | 单实例开发阶段有基础成本保护；多实例部署前必须改为共享限流 Store/并发协调。后续仍需 Token/上下文预算、供应商真实 usage 记录与按账户预算；CI 覆盖用户隔离、429 与并发释放 |
 | SEC-02 | 模型“可用/连接”状态可能误导 | 中 | /api/models 在 env 字段齐全时返回 available:true；没有上游健康验证 | 将 configured、enabled、health/status 分开；未探测状态显示 unknown/configured |
 | SEC-03 | Provider 错误与耗时不可观测 | 中 | 当前只有通用错误响应与服务端 console；无结构化 requestId/usage_logs | 增加最小化日志、requestId、provider/model、错误类别和耗时；不记录 API Key/不必要提示词 |
 | SEC-04 | 无数据库迁移和恢复演练 | 高（公开生产前） | db.js 直接 CREATE TABLE；没有版本化迁移/恢复步骤执行证据 | migrations、定期备份、恢复演练、升级测试 |

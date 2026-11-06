@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -21,6 +22,51 @@ const titleSchema = z.object({
   title: z.string().trim().min(1).max(100),
 });
 router.use(requireAuth);
+
+const aiUserRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  keyGenerator: (req) => 'user:' + String(req.user.id),
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: {
+    error: 'AI_USER_RATE_LIMITED',
+    message: '你的 AI 请求次数已达到当前窗口上限（20 次/15 分钟），请稍后重试。',
+  },
+});
+
+const aiIpRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: {
+    error: 'AI_IP_RATE_LIMITED',
+    message: '当前网络的 AI 请求过于频繁，请稍后重试。',
+  },
+});
+
+const activeAiUsers = new Set();
+function limitConcurrentAiRequests(req, res, next) {
+  const userKey = String(req.user.id);
+  if (activeAiUsers.has(userKey)) {
+    return res.status(429).json({
+      error: 'AI_CONCURRENCY_LIMITED',
+      message: '同一账号当前只能运行一个 AI 生成任务，请先停止或等待当前任务完成。',
+    });
+  }
+
+  activeAiUsers.add(userKey);
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    activeAiUsers.delete(userKey);
+  };
+  res.once('finish', release);
+  res.once('close', release);
+  next();
+}
 
 function findConversation(id, userId) {
   return db.prepare('SELECT * FROM conversations WHERE id=? AND user_id=?').get(id, userId);
@@ -84,7 +130,7 @@ router.patch('/:id', (req, res) => {
   res.json({ conversation: findConversation(Number(req.params.id), req.user.id) });
 });
 
-router.post('/:id/messages', async (req, res, next) => {
+router.post('/:id/messages', aiUserRateLimiter, aiIpRateLimiter, limitConcurrentAiRequests, async (req, res, next) => {
   try {
     if (!isPositiveId(req.params.id)) {
       return res.status(400).json({ error: 'INVALID_ID', message: '对话编号无效。' });
@@ -100,7 +146,23 @@ router.post('/:id/messages', async (req, res, next) => {
     if (!config.aiConfigured) throw new ProviderNotConfiguredError();
 
     const prompt = [...readRecentHistory(conversationId), { role: 'user', content: parsed.data.content }];
-    const reply = await createAssistantReply(prompt);
+    const controller = new AbortController();
+    const onClose = () => {
+      if (!res.writableEnded && !res.destroyed) controller.abort();
+    };
+    res.once('close', onClose);
+
+    let reply;
+    try {
+      reply = await createAssistantReply(prompt, { signal: controller.signal });
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      throw error;
+    } finally {
+      res.removeListener('close', onClose);
+    }
+    if (controller.signal.aborted || res.destroyed) return;
+
     const insert = db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)');
     const save = db.transaction(() => {
       const userResult = insert.run(conversationId, 'user', parsed.data.content);
@@ -118,7 +180,7 @@ router.post('/:id/messages', async (req, res, next) => {
   }
 });
 
-router.post('/:id/messages/stream', async (req, res, next) => {
+router.post('/:id/messages/stream', aiUserRateLimiter, aiIpRateLimiter, limitConcurrentAiRequests, async (req, res, next) => {
   if (!isPositiveId(req.params.id)) {
     return res.status(400).json({ error: 'INVALID_ID', message: '对话编号无效。' });
   }

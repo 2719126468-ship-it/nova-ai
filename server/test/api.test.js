@@ -267,6 +267,118 @@ test('stream endpoint falls back to a complete JSON response when the provider i
 });
 
 
+test('AI generation allows only one in-flight request per user and releases the slot', async () => {
+  let notifyProvider;
+  let releaseFirst;
+  let callCount = 0;
+  const providerReceived = new Promise((resolve) => { notifyProvider = resolve; });
+  providerServer = createServer((incoming, outgoing) => {
+    let body = '';
+    incoming.setEncoding('utf8');
+    incoming.on('data', (chunk) => { body += chunk; });
+    incoming.on('end', () => {
+      callCount += 1;
+      const payload = JSON.parse(body);
+      assert.equal(payload.stream, true);
+      outgoing.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      if (callCount === 1) {
+        outgoing.write('data: {"choices":[{"delta":{"content":"first"}}]}\n\n');
+        releaseFirst = () => outgoing.end('data: [DONE]\n\n');
+        notifyProvider();
+      } else {
+        outgoing.end('data: {"choices":[{"delta":{"content":"second"}}]}\n\ndata: [DONE]\n\n');
+      }
+    });
+  });
+  await new Promise((resolve) => providerServer.listen(0, '127.0.0.1', resolve));
+  const previous = { aiBaseUrl: config.aiBaseUrl, aiApiKey: config.aiApiKey, aiModel: config.aiModel };
+  config.aiBaseUrl = 'http://127.0.0.1:' + providerServer.address().port + '/v1';
+  config.aiApiKey = 'test-only-secret-key';
+  config.aiModel = 'mock-concurrency-model';
+
+  try {
+    const agent = request.agent(app);
+    await agent.post('/api/v1/auth/login').set(originHeaders)
+      .send({ email: 'test@example.com', password: 'a-strong-test-password' }).expect(200);
+    const created = await agent.post('/api/v1/conversations').set(originHeaders)
+      .send({ title: 'Concurrency test' }).expect(201);
+    const streamPath = '/api/v1/conversations/' + created.body.conversation.id + '/messages/stream';
+    const firstRequest = agent.post(streamPath)
+      .set(originHeaders)
+      .send({ content: 'First request' })
+      .buffer(true)
+      .parse((incoming, callback) => {
+        let body = '';
+        incoming.setEncoding('utf8');
+        incoming.on('data', (chunk) => { body += chunk; });
+        incoming.on('end', () => callback(null, body));
+        incoming.on('error', callback);
+      })
+      .then((response) => response);
+
+    await providerReceived;
+    const blocked = await agent.post(streamPath).set(originHeaders)
+      .send({ content: 'Concurrent request' }).expect(429);
+    assert.equal(blocked.body.error, 'AI_CONCURRENCY_LIMITED');
+
+    releaseFirst();
+    const first = await firstRequest;
+    assert.equal(first.status, 200);
+    assert.match(first.body, /event: message_complete/);
+
+    const afterRelease = await agent.post(streamPath).set(originHeaders)
+      .send({ content: 'After release' })
+      .buffer(true)
+      .parse((incoming, callback) => {
+        let body = '';
+        incoming.setEncoding('utf8');
+        incoming.on('data', (chunk) => { body += chunk; });
+        incoming.on('end', () => callback(null, body));
+        incoming.on('error', callback);
+      })
+      .expect(200);
+    assert.match(afterRelease.body, /event: message_complete/);
+  } finally {
+    releaseFirst?.();
+    config.aiBaseUrl = previous.aiBaseUrl;
+    config.aiApiKey = previous.aiApiKey;
+    config.aiModel = previous.aiModel;
+    await new Promise((resolve) => providerServer.close(resolve));
+    providerServer = null;
+  }
+});
+
+test('AI request quotas are isolated per user and return an explicit 429 response', async () => {
+  const firstAgent = request.agent(app);
+  await firstAgent.post('/api/v1/auth/register').set(originHeaders)
+    .send({ email: 'quota@example.com', name: 'Quota User', password: 'a-strong-test-password' }).expect(201);
+  await firstAgent.post('/api/v1/auth/login').set(originHeaders)
+    .send({ email: 'quota@example.com', password: 'a-strong-test-password' }).expect(200);
+  const firstConversation = await firstAgent.post('/api/v1/conversations').set(originHeaders)
+    .send({ title: 'Quota check' }).expect(201);
+  const path = '/api/v1/conversations/' + firstConversation.body.conversation.id + '/messages/stream';
+
+  for (let index = 0; index < 20; index += 1) {
+    const response = await firstAgent.post(path).set(originHeaders).send({ content: 'quota probe ' + index });
+    assert.equal(response.status, 503);
+    assert.equal(response.body.error, 'AI_PROVIDER_NOT_CONFIGURED');
+  }
+  const limited = await firstAgent.post(path).set(originHeaders).send({ content: 'twenty-first request' });
+  assert.equal(limited.status, 429);
+  assert.equal(limited.body.error, 'AI_USER_RATE_LIMITED');
+
+  const secondAgent = request.agent(app);
+  await secondAgent.post('/api/v1/auth/register').set(originHeaders)
+    .send({ email: 'other-quota@example.com', name: 'Other Quota User', password: 'a-strong-test-password' }).expect(201);
+  await secondAgent.post('/api/v1/auth/login').set(originHeaders)
+    .send({ email: 'other-quota@example.com', password: 'a-strong-test-password' }).expect(200);
+  const secondConversation = await secondAgent.post('/api/v1/conversations').set(originHeaders)
+    .send({ title: 'Independent quota' }).expect(201);
+  const independent = await secondAgent.post('/api/v1/conversations/' + secondConversation.body.conversation.id + '/messages/stream')
+    .set(originHeaders).send({ content: 'Independent user request' });
+  assert.equal(independent.status, 503);
+  assert.equal(independent.body.error, 'AI_PROVIDER_NOT_CONFIGURED');
+});
 test('Zod 4 validation errors retain structured field details', async () => {
   const response = await request(app).post('/api/v1/auth/register').set(originHeaders)
     .send({ email: 'not-an-email', name: '', password: 'short' })
