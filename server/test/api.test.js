@@ -1081,6 +1081,9 @@ test('users can link their own conversations to projects but cannot cross-link a
 test('multi-provider model registry keeps API keys private and routes the selected model upstream', async () => {
   let capturedRequest = null;
   let capturedAuthorization = null;
+  let capturedSecondRequest = null;
+  let capturedSecondAuthorization = null;
+  let secondProviderServer;
   providerServer = createServer((incoming, outgoing) => {
     let body = '';
     capturedAuthorization = incoming.headers.authorization;
@@ -1093,6 +1096,18 @@ test('multi-provider model registry keeps API keys private and routes the select
     });
   });
   await new Promise((resolve) => providerServer.listen(0, '127.0.0.1', resolve));
+  secondProviderServer = createServer((incoming, outgoing) => {
+    let body = '';
+    capturedSecondAuthorization = incoming.headers.authorization;
+    incoming.setEncoding('utf8');
+    incoming.on('data', (chunk) => { body += chunk; });
+    incoming.on('end', () => {
+      capturedSecondRequest = JSON.parse(body);
+      outgoing.writeHead(200, { 'Content-Type': 'application/json' });
+      outgoing.end(JSON.stringify({ choices: [{ message: { content: 'Second provider selected correctly' } }] }));
+    });
+  });
+  await new Promise((resolve) => secondProviderServer.listen(0, '127.0.0.1', resolve));
 
   const previous = {
     aiBaseUrl: config.aiBaseUrl,
@@ -1118,7 +1133,7 @@ test('multi-provider model registry keeps API keys private and routes the select
     {
       id: 'remote-test',
       name: 'Remote Test Provider',
-      baseUrl: 'https://models.example.test/v1',
+      baseUrl: 'http://127.0.0.1:' + secondProviderServer.address().port + '/v1',
       apiKey: 'private-remote-provider-key',
       models: [{ id: 'remote-chat', name: 'Remote Chat' }],
     },
@@ -1162,6 +1177,22 @@ test('multi-provider model registry keeps API keys private and routes the select
     assert.equal(capturedAuthorization, 'Bearer private-local-provider-key');
     assert.equal(capturedRequest.model, 'upstream-chat-v2');
 
+
+    const secondResponse = await agent.post('/api/v1/conversations/' + created.body.conversation.id + '/messages/stream')
+      .set(originHeaders)
+      .send({ content: 'Use the second provider', modelId: 'remote-test:remote-chat' })
+      .buffer(true)
+      .parse((incoming, callback) => {
+        let result = '';
+        incoming.setEncoding('utf8');
+        incoming.on('data', (chunk) => { result += chunk; });
+        incoming.on('end', () => callback(null, result));
+        incoming.on('error', callback);
+      }).expect(200);
+    assert.match(secondResponse.body, /Second provider selected correctly/);
+    assert.equal(capturedSecondAuthorization, 'Bearer private-remote-provider-key');
+    assert.equal(capturedSecondRequest.model, 'remote-chat');
+
     await agent.post('/api/v1/conversations/' + created.body.conversation.id + '/messages/stream')
       .set(originHeaders)
       .send({ content: 'Disabled models must not run', modelId: 'local-test:disabled-model' })
@@ -1173,6 +1204,8 @@ test('multi-provider model registry keeps API keys private and routes the select
     config.aiProvidersJson = previous.aiProvidersJson;
     config.aiDefaultModelId = previous.aiDefaultModelId;
     await new Promise((resolve) => providerServer.close(resolve));
+    await new Promise((resolve) => secondProviderServer.close(resolve));
     providerServer = null;
+    secondProviderServer = null;
   }
 });
