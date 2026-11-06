@@ -1,83 +1,81 @@
 # NOVA AI 开发路线图
 
-当前产品目标与优先级以 [正式产品基线](PRODUCT-BASELINE.md) 为准。当前唯一主线是 V0.1 核心对话系统；不并行扩张为大量静态模块。
+- Updated: 2026-11-07
+- 当前基线：`main`
+- 详细任务状态以 [NOVA Development Tracker](DEVELOPMENT-TRACKER.md) 为准。
+- 当前策略：先完成 V0.1 发布门槛与 V0.2 工作流闭环，不重建已工作的核心模块。
 
-## 0.1 — 核心对话系统（当前阶段）
+## V0.1 — 核心对话系统
 
-### 已经具备的基础
-- [x] React 产品前端、独立页面、响应式布局与主题切换
-- [x] 注册、登录、注销、HttpOnly 服务端会话
-- [x] SQLite 用户、会话、项目、对话、消息和研究文章表
-- [x] Projects 基础 CRUD
-- [x] Conversations 列表、读取、创建、删除和消息持久化
-- [x] OpenAI-compatible Provider 的非流式基础调用
-- [x] Markdown/GFM 消息展示
-- [x] 基础管理员角色、用户管理和 Research CMS
-- [x] 基础安全中间件和 GitHub Actions CI
+**状态：核心实现已具备；设备、安全和公开发布验收仍未完成。**
 
-### V0.1 尚未完成（P0）
-- [ ] Provider 接口升级为流式/非流式统一适配，支持错误归一化和取消
-- [ ] SSE 增量输出、停止生成、客户端断连后取消上游
-- [x] 服务端 Model/Provider Registry：多 OpenAI-compatible Provider、多模型目录、能力元数据与模型启停状态
-- [x] Chat 模型选择器按服务端目录切换，并将 public model ID 映射至 Provider 上游模型
-- [x] Chat 模型选择、用户消息编辑、复制、重试和重新生成
-- [ ] 代码语法高亮与代码块复制
-- [ ] 会话重命名；项目与会话关联
-- [ ] 按模型上下文窗口预算管理历史
-- [ ] AI 专属并发、每用户限流、资源配额和用量日志
-- [ ] 数据库 migrations
-- [ ] 双用户隔离、Provider 错误、流式取消、管理员和限流回归测试
-- [ ] 移动端端到端测试、账户导出/删除和隐私告知
+已完成：
+- [x] 注册、登录、注销、HttpOnly 服务端会话、个人资料与密码管理
+- [x] 用户数据隔离、Projects CRUD、项目与对话关联
+- [x] 多轮聊天、SSE 流式输出、停止生成、断连取消和错误归一化
+- [x] 会话重命名/删除、消息编辑、重试/重新生成、回答版本历史与恢复
+- [x] Markdown/GFM、代码高亮、代码块复制
+- [x] 多 OpenAI-compatible Provider / Model registry、模型切换、管理员管理和密钥加密
+- [x] 模型上下文预算、Token 来源标识、输出预留和历史裁剪
+- [x] AI 用量记录、管理员统计、账户数据导出与账户删除
+- [x] SQLite 版本迁移、关键 API 权限与 Provider 故障回归测试
 
-完成定义见 [V0.1 Backlog](audits/V0.1-BACKLOG.md)。
+发布验收仍待：
+- [ ] Playwright 端到端和 Android 浏览器真机回归（包括 Mate 20 Pro）
+- [ ] 生产 CSP、严格 CSRF/Origin 策略和第三方模型数据处理告知
+- [ ] SQLite 备份/恢复演练、部署环境验证和日志/错误监控
+- [ ] 管理员审计日志、完整依赖与历史密钥扫描
+- [ ] 独立安全审查；CI 通过不等于完成渗透测试或生产安全认证
 
-## 0.2 — AI 工作空间
+## V0.2 — AI 工作空间
 
-- [ ] Projects 深化：项目内会话、项目指令和项目内容组织
-- [ ] Documents：Markdown 文档创建、编辑、自动保存、重命名、删除和导出
-- [ ] 对话结果生成文档
-- [ ] 严格受限的文件上传与解析
+**状态：Documents 与 Project Context 第一版已合并；继续完善跨模块工作流。**
 
-## 0.3 — Research 与 Provider 扩展
+已完成：
+- [x] 项目内会话关联、项目指令和项目资料管理
+- [x] 私有 Markdown Documents 文档库、项目关联、创建/编辑/预览
+- [x] 850 ms 防抖自动保存、版本冲突恢复、Markdown 下载
+- [x] TXT / Markdown / CSV / JSON 项目资料上传、下载和删除
+- [x] 文件默认不加入上下文，用户显式启用后才可用于项目对话
+- [x] 项目资料按所有者隔离、内容长度限制和账户导出/删除
+- [x] Chat 显示项目指令/文件上下文的载入、截断或省略状态
 
-- [ ] 接入真实搜索服务并管理来源
-- [ ] 研究计划、来源引用、结构化报告、保存和导出
-- [x] 多 Provider 基础适配：服务端登记多个 OpenAI-compatible Provider，Chat 可切换启用模型
-- [x] 按需 Provider 探测：已登录用户可请求上游 /models 目录核验模型 ID，不发送 completion
-- [ ] OAuth/浏览器登录型 Provider、模型自动发现、自动健康巡检与 failover
-- [ ] 模型健康状态和失败统计（当前目录只显示 unknown/configured_unverified）
+下一步：
+- [ ] Chat → Documents：将 AI 回答整理为新文档，保存到指定项目并继续编辑
+- [ ] 完善文档重命名、归档和更丰富的编辑体验
+- [ ] 真机验证文档自动保存、文件选择/上传、下载和项目上下文开关
 
-## 1.0 — 稳定公开版本
+## V0.3 — Research 与 Provider 扩展
 
-- [ ] HTTPS、持久化部署、备份和恢复演练
-- [ ] 生产日志、错误监控、告警和依赖审查
-- [ ] PostgreSQL/共享限流存储（仅在多实例或容量需要时）
-- [ ] 完整隐私流程、安全审计、端到端与压力测试
+- [ ] 接入真实搜索 Provider，保留来源 URL、标题、时间和检索元数据
+- [ ] 研究计划、可验证引用、结构化报告、保存与 Markdown 导出
+- [ ] 明确区分检索事实、模型综合和未证实推测
+- [ ] 原生 Anthropic API Adapter
+- [ ] OAuth / 浏览器登录型 Provider 的独立会话与协议适配
+- [ ] 可控模型自动发现、健康巡检和故障切换
 
-## 审计资料
+Research 文章 CMS 与本地分类/筛选不等于已接入互联网搜索；未得到真实检索结果时不得声称已经搜索。
+
+## V1.0 — 稳定公开版本
+
+- [ ] HTTPS、可靠持久化部署、备份与恢复演练
+- [ ] 生产监控、错误告警、日志脱敏和管理员审计
+- [ ] 隐私政策、服务条款、第三方模型数据告知和账户数据处理流程
+- [ ] 完整安全审查、端到端测试、压力测试和滥用处理
+- [ ] 有多实例需求后再评估 PostgreSQL 与共享限流存储
+
+## 审计与状态入口
 
 - [正式产品基线](PRODUCT-BASELINE.md)
+- [开发任务追踪](DEVELOPMENT-TRACKER.md)
 - [V0.1 实现审计](audits/NOVA-V0.1-IMPLEMENTATION-AUDIT.md)
 - [技术债清单](audits/TECH-DEBT.md)
 - [安全与隐私审查](audits/SECURITY-REVIEW.md)
-- [开发任务清单](audits/V0.1-BACKLOG.md)
+- [V0.1 Backlog](audits/V0.1-BACKLOG.md)
 
+## 最近验收记录
 
-## 2026-11-06 实施进度
-
-V0.1 已进入可验证的流式聊天阶段：版本化 API、SQLite 消息状态迁移、单 Provider SSE、停止生成、会话重命名、复制消息及模型状态语义已落地。已加入并通过 CI 的每用户频率限制、跨 legacy/SSE 单用户并发保护、双账号项目/对话隔离和 Provider 错误分类测试。当前主线继续只聚焦 Chat；接下来优先补齐 Provider 故障/取消测试、上下文预算、跨用户隔离与编辑/重试/重新生成。V0.1 尚未达到公开生产发布标准。
-
-
-上下文策略进度：已实现 `AI_MAX_CONTEXT_CHARS` 字符预算，按最近完整轮次保留历史，并在当前消息超限时于调用 Provider 前返回 413；Provider Token 计数与模型上下文窗口仍未验证。
-
-
-移动端性能进展：路由页面已通过 React.lazy 按需加载，CI 构建的入口 JS 为 276.17 kB（gzip 88.45 kB），共享库 163.12 kB（gzip 48.91 kB），Vite 不再报告超过 500 kB 的 chunk。尚未完成真实 Android 浏览器端到端回归。
-
-
-Projects delivery update (2026-11-06): project-conversation migration v2, owner-scoped link/list/unlink APIs, Studio association management, and direct opening of a selected conversation in Chat are implemented. CI verifies cross-account rejection and passes 23 API tests. Project instructions, richer project context, and Documents remain later work.
-
-
-Model registry progress: `AI_PROVIDERS_JSON` now registers multiple OpenAI-compatible providers and models; `AI_DEFAULT_MODEL` selects the default, and the Chat selector sends its public model ID to a server-side resolver. Keys/base URLs stay server-side. CI test coverage has reached 24/24 API tests and verifies routing through two separate mock providers without exposing either key. Health remains `unknown` until an explicit health probe is implemented; browser-login/OAuth provider integrations are future work.
-
-
-Account data controls: the Account page now offers JSON export and password+email confirmed account deletion. API integration tests cover export scope, credential omission, cascaded removal of personal project/chat/session records, and anonymization of author IDs for retained public Research articles. Backup retention and deletion propagation after restore remain deployment-policy work.
+- 2026-11-07：PR #13 merged，Project Context 和受控文本资料管理进入 `main`。
+- PR #13 CI run #86：33/33 API tests passed；production web build passed。
+- 主分支合并后 CI 继续运行；不在该 run 完成前把 main 标记为已完成最终验证。
+- 包版本保持 `0.1.0`，仅在对应版本的发布验收完成后升级。
