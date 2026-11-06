@@ -898,7 +898,10 @@ test('failed edit regeneration preserves the original conversation branch', asyn
     const saved = db.prepare(
       'SELECT role,content,status FROM messages WHERE conversation_id=? ORDER BY id',
     ).all(conversationId);
-    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM message_versions WHERE message_id=?').get(db.prepare("SELECT id FROM messages WHERE conversation_id=? AND role='assistant' ORDER BY id LIMIT 1").get(conversationId).id).count, 0);
+    const lastAssistant = db.prepare(
+      "SELECT id FROM messages WHERE conversation_id=? AND role='assistant' ORDER BY id DESC LIMIT 1",
+    ).get(conversationId);
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM message_versions WHERE message_id=?').get(lastAssistant.id).count, 0);
     assert.deepEqual(saved, [
       { role: 'user', content: 'original first question', status: 'complete' },
       { role: 'assistant', content: 'original first answer', status: 'complete' },
@@ -1025,6 +1028,28 @@ test('editing a user message replaces that turn and deletes later conversation h
     assert.equal(restored.body.versions.length, 1);
     assert.equal(restored.body.versions[0].content, 'Rewritten assistant message');
     assert.equal(restored.body.versions[0].source, 'restore');
+
+    await owner.put(
+      '/api/v1/conversations/' + conversationId + '/messages/' + target.lastInsertRowid + '/stream',
+    ).set(originHeaders).send({ content: 'edited again' })
+      .buffer(true)
+      .parse((incoming, callback) => {
+        let result = '';
+        incoming.setEncoding('utf8');
+        incoming.on('data', (chunk) => { result += chunk; });
+        incoming.on('end', () => callback(null, result));
+        incoming.on('error', callback);
+      }).expect(200);
+    const newestAssistant = db.prepare(
+      "SELECT id FROM messages WHERE conversation_id=? AND role='assistant' ORDER BY id DESC LIMIT 1",
+    ).get(conversationId);
+    const carriedVersions = await owner.get(
+      '/api/v1/conversations/' + conversationId + '/messages/' + newestAssistant.id + '/versions',
+    ).set(originHeaders).expect(200);
+    assert.deepEqual(carriedVersions.body.versions.map((version) => version.content), [
+      'old response',
+      'Rewritten assistant message',
+    ]);
   } finally {
     config.aiBaseUrl = previous.aiBaseUrl;
     config.aiApiKey = previous.aiApiKey;
