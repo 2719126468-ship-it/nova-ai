@@ -82,6 +82,8 @@ export async function probeModel(modelId) {
 
     const matchedModel = payload.data.find((entry) => entry && entry.id === model.upstreamModelId);
     if (!matchedModel) {
+      db.prepare('DELETE FROM model_context_windows WHERE provider_id=? AND upstream_model_id=?')
+        .run(model.providerId, model.upstreamModelId);
       return result('unknown', 'MODEL_NOT_LISTED', 'Provider 可访问，但没有在模型目录中确认该模型 ID。', model.id, durationMs);
     }
     const reportedContextTokens = readProviderContextWindow(matchedModel);
@@ -101,6 +103,9 @@ export async function probeModel(modelId) {
         source: 'provider_reported',
         checkedAt,
       };
+    } else {
+      db.prepare('DELETE FROM model_context_windows WHERE provider_id=? AND upstream_model_id=?')
+        .run(model.providerId, model.upstreamModelId);
     }
     return result('healthy', 'MODEL_LIST_CONFIRMED', 'Provider 可访问，且模型 ID 已在上游目录中确认。', model.id, durationMs, contextWindow);
   } catch (error) {
