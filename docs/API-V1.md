@@ -113,7 +113,25 @@ All project endpoints require an authenticated session and scope data to the cur
 | POST | /api/v1/projects/:id/conversations | Link an owned conversation to an owned project |
 | DELETE | /api/v1/projects/:id/conversations/:conversationId | Remove only the project link |
 
-A project and conversation can be linked only when both belong to the authenticated user. Cross-account project/conversation combinations return 404. Duplicate links are idempotent. Removing a link does not delete the conversation or its messages; deleting a project removes its link rows through foreign-key cascade. Deleting a conversation also removes its link rows.
+A project and conversation can be linked only when both belong to the authenticated user. Cross-account project/conversation combinations return 404. Duplicate links are idempotent. Removing a link does not delete the conversation or its messages; deleting a project removes its link rows through foreign-key cascade. Deleting a conversation also removes its link rows. Documents linked to a deleted project are preserved and detached; their projectId becomes null.
+
+## Documents
+
+All Document endpoints require an authenticated session. Every query and mutation is scoped to the current user.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | /api/v1/documents | List owned documents with optional `projectId`, title query `q`, `limit` (1–100) and `offset` |
+| POST | /api/v1/documents | Create a Markdown document, optionally associated with an owned project |
+| GET | /api/v1/documents/:id | Read an owned document including its Markdown content and version |
+| PUT | /api/v1/documents/:id | Update title/content/project association using a required `expectedVersion` |
+| DELETE | /api/v1/documents/:id | Delete an owned document |
+
+Create body: `{ "title": "Meeting notes", "content": "# Notes", "projectId": 12 }`. `projectId` is optional or null. Titles are trimmed and limited to 120 characters; Markdown content is limited to 200,000 JavaScript characters. List responses omit content and return `contentLength`; read/create/update responses return the complete document.
+
+Updates must include the version previously read: `{ "content": "# Updated", "expectedVersion": 3 }`. Each successful update increments `version`. A stale version returns HTTP 409 `DOCUMENT_VERSION_CONFLICT` with the current version; clients should fetch and reconcile before retrying, rather than silently overwriting newer edits.
+
+A document may be linked only to a project owned by the same account. API ownership checks and SQLite triggers both enforce this rule. Attempts to read, modify, or delete another user's document return 404. Deleting a project preserves owned documents and clears `projectId`; deleting an account cascades its owned documents. Account export includes the complete Markdown body and increments its schema version to 5.
 
 ## Conversations
 
