@@ -229,6 +229,65 @@ test('SSE chat streams deltas and persists the completed assistant message', asy
 });
 
 
+
+
+test('legacy JSON chat stores Provider-reported usage and returns a request reference', async () => {
+  providerServer = createServer((incoming, outgoing) => {
+    incoming.resume();
+    incoming.on('end', () => {
+      outgoing.writeHead(200, { 'Content-Type': 'application/json' });
+      outgoing.end(JSON.stringify({
+        choices: [{ message: { content: 'Legacy JSON response' } }],
+        usage: { prompt_tokens: 12, completion_tokens: 5, total_tokens: 17 },
+      }));
+    });
+  });
+  await new Promise((resolve) => providerServer.listen(0, '127.0.0.1', resolve));
+  const previous = {
+    aiBaseUrl: config.aiBaseUrl,
+    aiApiKey: config.aiApiKey,
+    aiModel: config.aiModel,
+  };
+  config.aiBaseUrl = 'http://127.0.0.1:' + providerServer.address().port + '/v1';
+  config.aiApiKey = 'json-usage-test-secret';
+  config.aiModel = 'mock-json-usage-model';
+
+  try {
+    const agent = request.agent(app);
+    await agent.post('/api/v1/auth/register').set(originHeaders).send({
+      email: 'json-usage@example.com',
+      name: 'JSON Usage Tester',
+      password: 'json-usage-password-strong',
+    }).expect(201);
+    const created = await agent.post('/api/v1/conversations').set(originHeaders)
+      .send({ title: 'JSON Usage' }).expect(201);
+    const response = await agent.post('/api/v1/conversations/' + created.body.conversation.id + '/messages')
+      .set(originHeaders).send({ content: 'Please return JSON usage' }).expect(201);
+
+    assert.equal(response.body.assistantMessage.content, 'Legacy JSON response');
+    assert.equal(typeof response.body.requestId, 'string');
+    assert.equal(JSON.stringify(response.body).includes('json-usage-test-secret'), false);
+    const usage = db.prepare(
+      'SELECT request_id,operation,status,input_tokens,output_tokens,total_tokens,usage_source FROM ai_usage WHERE request_id=?',
+    ).get(response.body.requestId);
+    assert.deepEqual(usage, {
+      request_id: response.body.requestId,
+      operation: 'chat',
+      status: 'succeeded',
+      input_tokens: 12,
+      output_tokens: 5,
+      total_tokens: 17,
+      usage_source: 'provider',
+    });
+  } finally {
+    config.aiBaseUrl = previous.aiBaseUrl;
+    config.aiApiKey = previous.aiApiKey;
+    config.aiModel = previous.aiModel;
+    await new Promise((resolve) => providerServer.close(resolve));
+    providerServer = null;
+  }
+});
+
 test('stream endpoint falls back to a complete JSON response when the provider ignores stream mode', async () => {
   providerServer = createServer((incoming, outgoing) => {
     let body = '';
@@ -763,6 +822,10 @@ test('client disconnect aborts upstream generation and persists cancelled status
       error_code: 'AI_REQUEST_CANCELLED',
       content: 'partial-content',
     });
+    const cancelledUsage = db.prepare(
+      "SELECT status,error_code FROM ai_usage WHERE user_id=(SELECT id FROM users WHERE email=?) ORDER BY id DESC LIMIT 1",
+    ).get('provider-cancel@example.com');
+    assert.deepEqual(cancelledUsage, { status: 'cancelled', error_code: 'AI_REQUEST_CANCELLED' });
   } finally {
     if (clientServer.listening) await new Promise((resolve) => clientServer.close(resolve));
     config.aiBaseUrl = previous.aiBaseUrl;
@@ -1466,6 +1529,10 @@ test('non-streaming client disconnect aborts upstream request and releases the g
     assert.equal(recovery.status, 201, 'generation lock should be released after client disconnect');
     const payload = await recovery.json();
     assert.equal(payload.assistantMessage.content, 'Request after cancellation succeeded');
+    const recoveredUsage = db.prepare(
+      "SELECT status,error_code FROM ai_usage WHERE user_id=(SELECT id FROM users WHERE email=?) ORDER BY id DESC LIMIT 1",
+    ).get('non-stream-cancel@example.com');
+    assert.deepEqual(recoveredUsage, { status: 'succeeded', error_code: null });
     assert.equal(providerCalls, 2);
   } finally {
     if (clientServer.listening) await new Promise((resolve) => clientServer.close(resolve));
