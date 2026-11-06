@@ -7,7 +7,7 @@
 
 ## Progress
 
-**6 / 12 complete** · 1 in progress · 5 planned
+**7 / 12 complete** · 1 in progress · 4 planned
 
 The existing V0.1 implementation is the foundation. Do not rebuild or replace working authentication, chat, SSE, model routing, Studio, account, or data-lifecycle flows. Extend them incrementally.
 
@@ -33,15 +33,15 @@ The existing V0.1 implementation is the foundation. Do not rebuild or replace wo
 | ID | Priority | Task | Status | Completion criteria |
 |---|---|---|---|---|
 | B2-01 | P0 | Provider management UI | **Complete** | Migration v5 stores managed OpenAI-compatible Providers; AES-256-GCM protects keys at rest; admin-only CRUD/default-model APIs and responsive UI support models, enable/disable and health checks; environment Providers remain read-only and take precedence; all API tests/build passed in CI runs #61/#62 and main run #63. |
-| B2-02 | P0 | Model context-window and budget management | **In progress** | Enforce configured model context limits; distinguish provider-reported limits, tokenizer estimates, and unknown values; preserve the current user message and explain truncation/limits. |
+| B2-02 | P0 | Model context-window and budget management | **Complete** | Migration v6 persists explicitly reported context windows with 30-day freshness; context-limit provenance distinguishes provider/admin/environment/unknown; supported OpenAI tokenizers are locally estimated and unknown tokenizers use conservative byte upper bounds only when a window is known; per-model input budget preserves the current message and trims older history; configurable output reserve is sent with model-appropriate provider parameters; context policy/truncation is visible in chat; CI run #67 passed API tests and production build. |
 
-Additional model-system follow-ups, after the two P0 tasks: tokenizer-based estimation, health-state persistence/refresh, automatic model discovery, controlled failover, native Anthropic API support, and OAuth/browser-session providers. Each protocol requires its own adapter and security review; OpenAI-compatible support does not imply compatibility with browser-login providers.
+Remaining model-system follow-ups: automatic model discovery, controlled failover, native Anthropic API support, and OAuth/browser-session providers such as browser-authenticated coding platforms. Each protocol requires its own adapter and security review; OpenAI-compatible support does not imply compatibility with browser-login providers.
 
 ## Batch 3 — NOVA V0.2 AI Workspace
 
 | ID | Priority | Task | Status | Completion criteria |
 |---|---|---|---|---|
-| B3-01 | P0 | Documents data model and API | Planned | Add owned documents with project association, create/read/update/delete endpoints, validation, migrations, and cross-account tests. |
+| B3-01 | P0 | Documents data model and API | **In progress** | Add owned documents with project association, create/read/update/delete endpoints, validation, migrations, and cross-account tests. |
 | B3-02 | P0 | Documents editor and autosave | Planned | Create/edit Markdown documents, autosave safely, show save/error state, and export content. |
 | B3-03 | P1 | Project context and file management | Planned | Add project instructions and organized project materials; implement upload only with file type/signature, size, isolation, retention, and parsing controls. |
 | B3-04 | P1 | Real Research search and citations | Planned | Use a real search provider, preserve source URLs/metadata, distinguish retrieved facts from model synthesis, and produce cited reports. |
@@ -82,6 +82,15 @@ Documents comes before project context/file management, and Research follows tho
 - Environment-defined Providers remain read-only and take precedence over database-managed IDs.
 - Added regression tests for administrator permissions, production HTTPS validation, secret redaction, encrypted storage, health checks, environment precedence, default model selection, and disable/delete behavior.
 - PR #9 merged as `8a0c6c65117abf3ba4a0eb9c3c82d3b60f0bda46`; PR CI runs #61/#62 passed and post-merge main CI run #63 passed.
+
+## 2026-11-07 — B2-02 completed; B3-01 started
+
+- PR #10 merged as `463e356c85c67091404b2d76d5c79eff65613e23`.
+- Migration v6 stores explicitly reported model context windows; values are refreshed by read-only model-catalog health checks and ignored after 30 days.
+- The request path applies model-aware input budgets, a configurable safety margin and output reserve, and a global character ceiling; it keeps the current user message intact and trims only older complete history.
+- Token source/provenance is explicit: local tokenizer estimate, conservative UTF-8 byte upper bound, or unknown. The provider output cap uses the configured OpenAI-compatible parameter and can be overridden/disabled per model.
+- Chat responses/UI expose context policy and history truncation; regression tests cover oversized messages, reasoning/non-reasoning output fields, provider opt-out, and model context provenance. PR CI run #67 passed API tests and production build.
+- B3-01 is now in progress: implement owned Documents schema and API as the first NOVA 0.2 workspace foundation.
 
 ## Completed work log
 
