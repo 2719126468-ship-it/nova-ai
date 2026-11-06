@@ -60,7 +60,7 @@ const migrations = [
         CREATE INDEX IF NOT EXISTS idx_ai_usage_status_created ON ai_usage(status, created_at DESC);
       `);
     },
-  },,
+  },
 
   {
     version: 4,
