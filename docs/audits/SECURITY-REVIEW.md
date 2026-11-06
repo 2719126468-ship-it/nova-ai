@@ -55,3 +55,8 @@
 ## 5. 审查限制
 
 本文件是基于源码的静态审查，不是渗透测试。未执行公网扫描、模糊测试、压力测试、依赖漏洞深度审查或完整历史密钥扫描。所有“正向”只表示代码中观察到相应控制，不构成安全认证。
+## Dependency remediation record — 2026-11-06
+
+- **GHSA-mrhx-c7xc-m3w5 / CVE-2023-54404 (High):** the server previously resolved Zod 3.25.76, which is inside the advisory's affected range (`< 4.6.6`). The server dependency is upgraded to Zod 4.6.7, with the workspace lockfile updated to the same exact release.
+- Existing NOVA schemas use common object, string, enum, trim, length, optional, default, and regex APIs. Zod's official v4 migration guide marks `.email()` and `.flatten()` as deprecated compatibility APIs, not removed APIs. A regression test exercises the existing structured `details.fieldErrors` response contract.
+- This remediation is considered complete only after a clean `npm ci`, the complete server test suite, production build, and dependency audit pass on the pull request commit. The dependency change does not constitute a full security audit of the application.

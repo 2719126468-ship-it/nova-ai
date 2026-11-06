@@ -54,6 +54,18 @@ test('health endpoint reports AI adapter as unconfigured without credentials', a
   assert.equal(response.body.ai.status, 'not_configured');
 });
 
+test('Zod v4 preserves structured validation field errors for registration', async () => {
+  const response = await request(app).post('/api/auth/register').set(originHeaders).send({
+    email: 'not-an-email', name: '', password: 'short',
+  });
+  assert.equal(response.status, 400);
+  assert.equal(response.body.error, 'VALIDATION_ERROR');
+  assert.ok(response.body.details?.fieldErrors);
+  assert.ok(response.body.details.fieldErrors.email?.length);
+  assert.ok(response.body.details.fieldErrors.name?.length);
+  assert.ok(response.body.details.fieldErrors.password?.length);
+});
+
 test('registration creates an account and an HttpOnly session cookie', async () => {
   const response = await request(app).post('/api/auth/register').set(originHeaders).send({
     email: 'test@example.com', name: 'NOVA Tester', password: 'a-strong-test-password',
