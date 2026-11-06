@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, ArrowUpRight, FileText, FolderPlus, MoreHorizontal, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, FileText, FolderPlus, MessageSquare, MoreHorizontal, Save, Trash2 } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, json } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
@@ -44,15 +44,101 @@ export function StudioEditor() {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
   const [error, setError] = useState('');
-  useEffect(() => { api(`/api/projects/${id}`).then(({ project: item }) => { setProject(item); setTitle(item.title); setDescription(item.description); setContent(item.content); }).catch((e) => setError(e.message)).finally(() => setLoading(false)); }, [id]);
+  const [linkedConversations, setLinkedConversations] = useState([]);
+  const [allConversations, setAllConversations] = useState([]);
+  const [linkConversationId, setLinkConversationId] = useState('');
+  const [linking, setLinking] = useState(false);
+  const [conversationError, setConversationError] = useState('');
+
+  async function loadLinkedConversations() {
+    const data = await api(`/api/projects/${id}/conversations`);
+    setLinkedConversations(data.conversations);
+  }
+
+  useEffect(() => {
+    let mounted = true;
+    api(`/api/projects/${id}`).then(({ project: item }) => {
+      if (!mounted) return;
+      setProject(item);
+      setTitle(item.title);
+      setDescription(item.description);
+      setContent(item.content);
+    }).catch((e) => {
+      if (mounted) setError(e.message);
+    }).finally(() => {
+      if (mounted) setLoading(false);
+    });
+    api(`/api/projects/${id}/conversations`).then((data) => {
+      if (mounted) setLinkedConversations(data.conversations);
+    }).catch((e) => {
+      if (mounted) setConversationError(e.message);
+    });
+    api('/api/v1/conversations').then((data) => {
+      if (mounted) setAllConversations(data.conversations);
+    }).catch((e) => {
+      if (mounted) setConversationError(e.message);
+    });
+    return () => { mounted = false; };
+  }, [id]);
   async function save(event) {
     event?.preventDefault(); setSaving(true); setError('');
     try { const data = await api(`/api/projects/${id}`, { method: 'PUT', body: json({ title, description, content }) }); setProject(data.project); setSavedAt(new Date()); }
     catch (e) { setError(e.message); }
     finally { setSaving(false); }
   }
+  async function addConversation(event) {
+    event.preventDefault();
+    if (!linkConversationId || linking) return;
+    setLinking(true);
+    setConversationError('');
+    try {
+      await api(`/api/projects/${id}/conversations`, {
+        method: 'POST',
+        body: json({ conversationId: Number(linkConversationId) }),
+      });
+      setLinkConversationId('');
+      await loadLinkedConversations();
+    } catch (e) {
+      setConversationError(e.message);
+    } finally {
+      setLinking(false);
+    }
+  }
+  async function removeConversation(conversationId) {
+    setConversationError('');
+    try {
+      await api(`/api/projects/${id}/conversations/${conversationId}`, { method: 'DELETE' });
+      setLinkedConversations((items) => items.filter((item) => item.id !== conversationId));
+    } catch (e) {
+      setConversationError(e.message);
+    }
+  }
+  const linkedIds = new Set(linkedConversations.map((conversation) => conversation.id));
+  const unlinkedConversations = allConversations.filter((conversation) => !linkedIds.has(conversation.id));
   if (loading) return <main className="page-wrap container-wide"><Loading label="正在打开项目…" /></main>;
   if (!project) return <main className="page-wrap container-wide"><ErrorNotice>{error || '项目不存在。'}</ErrorNotice><Button to="/studio" variant="outline"><ArrowLeft size={15} /> 返回 Studio</Button></main>;
   return <main className="editor-page container-wide"><div className="editor-topbar"><Link to="/studio" className="back-link"><ArrowLeft size={15} /> 所有项目</Link><div className="editor-save-state">{saving ? '正在保存…' : savedAt ? `已保存 · ${savedAt.toLocaleTimeString()}` : '所有更改需手动保存'}</div><Button onClick={save} disabled={saving || !title.trim()}><Save size={15} /> 保存项目</Button></div>
-    <ErrorNotice>{error}</ErrorNotice><form className="project-editor" onSubmit={save}><div className="editor-meta"><span>PROJECT / {String(project.id).padStart(4, '0')}</span><span>PRIVATE DRAFT</span></div><input className="editor-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="未命名项目" maxLength={120} required /><input className="editor-description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="添加一句描述…" maxLength={500} /><div className="editor-toolbar"><span><FileText size={15} /> 文档编辑器</span><span>MARKDOWN SUPPORTED IN CONTENT</span></div><textarea className="editor-content" value={content} onChange={(e) => setContent(e.target.value)} placeholder={'从这里开始写下你的想法…\n\n支持纯文本和 Markdown 源文。'} maxLength={200000} /><div className="editor-footer"><span>{content.length.toLocaleString()} / 200,000 characters</span><button type="submit" disabled={saving}><Save size={14} /> 保存更改</button></div></form></main>;
+    <ErrorNotice>{error}</ErrorNotice><form className="project-editor" onSubmit={save}><div className="editor-meta"><span>PROJECT / {String(project.id).padStart(4, '0')}</span><span>PRIVATE DRAFT</span></div><input className="editor-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="未命名项目" maxLength={120} required /><input className="editor-description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="添加一句描述…" maxLength={500} /><div className="editor-toolbar"><span><FileText size={15} /> 文档编辑器</span><span>MARKDOWN SUPPORTED IN CONTENT</span></div><textarea className="editor-content" value={content} onChange={(e) => setContent(e.target.value)} placeholder={'从这里开始写下你的想法…\n\n支持纯文本和 Markdown 源文。'} maxLength={200000} /><div className="editor-footer"><span>{content.length.toLocaleString()} / 200,000 characters</span><button type="submit" disabled={saving}><Save size={14} /> 保存更改</button></div></form>
+    <section className="project-conversations-panel">
+      <div className="project-conversations-heading">
+        <div><span className="eyebrow">PROJECT CONTEXT</span><h2>关联对话 <span>{linkedConversations.length.toString().padStart(2, '0')}</span></h2><p>把与这个项目有关的 AI 对话收在一起，之后可以从项目中继续查阅。</p></div>
+        <form className="project-conversation-link-form" onSubmit={addConversation}>
+          <select value={linkConversationId} onChange={(event) => setLinkConversationId(event.target.value)} disabled={!unlinkedConversations.length || linking}>
+            <option value="">{unlinkedConversations.length ? '选择一段现有对话' : '没有可添加的对话'}</option>
+            {unlinkedConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title || '新对话'}</option>)}
+          </select>
+          <button type="submit" disabled={!linkConversationId || linking}>{linking ? '正在添加…' : '添加对话'}</button>
+        </form>
+      </div>
+      <ErrorNotice>{conversationError}</ErrorNotice>
+      {linkedConversations.length ? <div className="project-conversation-list">
+        {linkedConversations.map((conversation) => <div className="project-conversation-row" key={conversation.id}>
+          <div className="project-conversation-icon"><MessageSquare size={16} /></div>
+          <div className="project-conversation-copy"><strong>{conversation.title || '新对话'}</strong><span>{conversation.last_message || '这段对话还没有消息。'}</span></div>
+          <time>{new Date(`${conversation.updated_at.replace(' ', 'T')}Z`).toLocaleDateString()}</time>
+          <button type="button" onClick={() => removeConversation(conversation.id)} aria-label="从项目中移除对话">移除</button>
+        </div>)}
+      </div> : <div className="project-conversation-empty">还没有关联对话。你可以把现有聊天加入这个项目；移除关联不会删除原对话。</div>}
+    </section>
+  </main>;
 }

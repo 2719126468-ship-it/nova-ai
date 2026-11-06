@@ -42,6 +42,23 @@ status: unknown means that the model is configured but has not been actively ver
 
 The server applies a configurable character budget to message content before sending a prompt upstream. Configure it with `AI_MAX_CONTEXT_CHARS` (default `40000`, allowed range `512`–`200000`). This is a JavaScript string-length budget, **not a token count**. The API reports `contextPolicy.tokenLimit: null` because provider/model token windows are not currently verified. NOVA keeps the newest complete turns that fit and always preserves the current user message. A failed/cancelled turn's unmatched trailing user message is not replayed as conversation history. If the current message alone exceeds the configured budget, the API returns HTTP 413 `AI_INPUT_TOO_LARGE` before calling the provider.
 
+## Projects
+
+All project endpoints require an authenticated session and scope data to the current user.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | /api/v1/projects | List owned projects, including linked conversation counts |
+| POST | /api/v1/projects | Create a project |
+| GET | /api/v1/projects/:id | Read an owned project and its linked conversation count |
+| PUT | /api/v1/projects/:id | Update an owned project |
+| DELETE | /api/v1/projects/:id | Delete an owned project (links are cascade-deleted; conversations remain) |
+| GET | /api/v1/projects/:id/conversations | List conversations linked to a project |
+| POST | /api/v1/projects/:id/conversations | Link an owned conversation to an owned project |
+| DELETE | /api/v1/projects/:id/conversations/:conversationId | Remove only the project link |
+
+A project and conversation can be linked only when both belong to the authenticated user. Cross-account project/conversation combinations return 404. Duplicate links are idempotent. Removing a link does not delete the conversation or its messages; deleting a project removes its link rows through foreign-key cascade. Deleting a conversation also removes its link rows.
+
 ## Conversations
 
 All endpoints below require an authenticated session.

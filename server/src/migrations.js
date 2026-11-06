@@ -13,6 +13,27 @@ const migrations = [
       database.exec('CREATE INDEX IF NOT EXISTS idx_messages_status ON messages(status)');
     },
   },
+
+  {
+    version: 2,
+    name: 'project-conversation-links',
+    up(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS project_conversations (
+          project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (project_id, conversation_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_project_conversations_user_project
+          ON project_conversations(user_id, project_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_project_conversations_conversation
+          ON project_conversations(conversation_id);
+      `);
+    },
+  },
+
 ];
 
 export function runMigrations(database) {

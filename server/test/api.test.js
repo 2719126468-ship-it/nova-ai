@@ -101,7 +101,7 @@ test('database migrations add message lifecycle fields and are idempotent', () =
   assert.ok(columns.has('status'));
   assert.ok(columns.has('error_code'));
   const versions = db.prepare('SELECT version FROM schema_migrations ORDER BY version').all();
-  assert.deepEqual(versions.map((row) => row.version), [1]);
+  assert.deepEqual(versions.map((row) => row.version), [1, 2]);
 });
 
 test('versioned models endpoint does not claim an unconfigured model is connected', async () => {
@@ -1017,4 +1017,62 @@ test('failed assistant retry preserves the previous failed response', async () =
     await new Promise((resolve) => providerServer.close(resolve));
     providerServer = null;
   }
+});
+
+
+test('users can link their own conversations to projects but cannot cross-link accounts', async () => {
+  const owner = request.agent(app);
+  await owner.post('/api/v1/auth/register').set(originHeaders).send({
+    email: 'project-links@example.com',
+    name: 'Project Link Owner',
+    password: 'project-link-owner-password',
+  }).expect(201);
+  const ownerProject = await owner.post('/api/v1/projects').set(originHeaders)
+    .send({ title: 'Owner project', description: '', content: '' }).expect(201);
+  const ownerConversation = await owner.post('/api/v1/conversations').set(originHeaders)
+    .send({ title: 'Owner conversation' }).expect(201);
+
+  const linked = await owner.post('/api/v1/projects/' + ownerProject.body.project.id + '/conversations')
+    .set(originHeaders).send({ conversationId: ownerConversation.body.conversation.id }).expect(201);
+  assert.equal(linked.body.success, true);
+  assert.equal(linked.body.alreadyLinked, false);
+
+  const duplicate = await owner.post('/api/v1/projects/' + ownerProject.body.project.id + '/conversations')
+    .set(originHeaders).send({ conversationId: ownerConversation.body.conversation.id }).expect(200);
+  assert.equal(duplicate.body.alreadyLinked, true);
+
+  const list = await owner.get('/api/v1/projects/' + ownerProject.body.project.id + '/conversations')
+    .set(originHeaders).expect(200);
+  assert.equal(list.body.conversations.length, 1);
+  assert.equal(list.body.conversations[0].id, ownerConversation.body.conversation.id);
+  assert.equal(list.body.conversations[0].title, 'Owner conversation');
+
+  const other = request.agent(app);
+  await other.post('/api/v1/auth/register').set(originHeaders).send({
+    email: 'project-links-other@example.com',
+    name: 'Other Project Owner',
+    password: 'project-link-other-password',
+  }).expect(201);
+  const otherProject = await other.post('/api/v1/projects').set(originHeaders)
+    .send({ title: 'Other project', description: '', content: '' }).expect(201);
+  const otherConversation = await other.post('/api/v1/conversations').set(originHeaders)
+    .send({ title: 'Other conversation' }).expect(201);
+
+  await other.get('/api/v1/projects/' + ownerProject.body.project.id + '/conversations')
+    .set(originHeaders).expect(404);
+  await other.post('/api/v1/projects/' + ownerProject.body.project.id + '/conversations')
+    .set(originHeaders).send({ conversationId: otherConversation.body.conversation.id }).expect(404);
+  await other.post('/api/v1/projects/' + otherProject.body.project.id + '/conversations')
+    .set(originHeaders).send({ conversationId: ownerConversation.body.conversation.id }).expect(404);
+  await owner.get('/api/v1/projects/' + otherProject.body.project.id + '/conversations')
+    .set(originHeaders).expect(404);
+
+  await owner.delete(
+    '/api/v1/projects/' + ownerProject.body.project.id + '/conversations/' + ownerConversation.body.conversation.id,
+  ).set(originHeaders).expect(200);
+  const empty = await owner.get('/api/v1/projects/' + ownerProject.body.project.id + '/conversations')
+    .set(originHeaders).expect(200);
+  assert.deepEqual(empty.body.conversations, []);
+  await owner.get('/api/v1/conversations/' + ownerConversation.body.conversation.id)
+    .set(originHeaders).expect(200);
 });
