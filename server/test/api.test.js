@@ -1873,6 +1873,9 @@ test('admin provider management encrypts secrets, enforces role boundaries, and 
     const refreshedModel = refreshedCatalog.body.models.find((item) => item.id === 'managed-test:managed-chat');
     assert.equal(refreshedModel.contextLimit, 98304);
     assert.equal(refreshedModel.contextLimitSource, 'provider_reported');
+    assert.equal(refreshedModel.maxTokensParameter, 'max_completion_tokens');
+    assert.equal(db.prepare('SELECT context_tokens FROM model_context_windows WHERE provider_id=? AND upstream_model_id=?')
+      .get('managed-test', 'managed-chat').context_tokens, 98304);
 
     const defaultModel = await admin.put('/api/v1/admin/model-default').set(originHeaders)
       .send({ defaultModelId: 'managed-test:managed-chat' }).expect(200);
@@ -1884,6 +1887,25 @@ test('admin provider management encrypts secrets, enforces role boundaries, and 
       .send({ name: 'Renamed Managed Provider' }).expect(200);
     const cipherAfter = db.prepare('SELECT api_key_encrypted FROM ai_providers WHERE id=?').get('managed-test');
     assert.equal(cipherAfter.api_key_encrypted, cipherBefore);
+    assert.equal(db.prepare('SELECT context_tokens FROM model_context_windows WHERE provider_id=? AND upstream_model_id=?')
+      .get('managed-test', 'managed-chat').context_tokens, 98304);
+
+    await admin.put('/api/v1/admin/providers/managed-test').set(originHeaders)
+      .send({
+        models: [{
+          id: 'managed-chat',
+          name: 'Managed Chat',
+          contextLimit: 65536,
+          tokenizer: 'o200k_base',
+          maxTokensParameter: 'max_completion_tokens',
+        }],
+      }).expect(200);
+    assert.equal(db.prepare('SELECT context_tokens FROM model_context_windows WHERE provider_id=? AND upstream_model_id=?')
+      .get('managed-test', 'managed-chat'), undefined);
+    const afterModelChange = await request(app).get('/api/v1/models').expect(200);
+    const modelAfterChange = afterModelChange.body.models.find((item) => item.id === 'managed-test:managed-chat');
+    assert.equal(modelAfterChange.contextLimit, 65536);
+    assert.equal(modelAfterChange.contextLimitSource, 'admin_configured');
 
     await admin.put('/api/v1/admin/providers/managed-test').set(originHeaders)
       .send({ enabled: false }).expect(200);
@@ -1918,6 +1940,7 @@ test('admin provider management encrypts secrets, enforces role boundaries, and 
 
     config.aiProvidersJson = '';
     await admin.delete('/api/v1/admin/providers/managed-test').set(originHeaders).expect(200);
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM model_context_windows WHERE provider_id=?').get('managed-test').count, 0);
     assert.equal(db.prepare("SELECT value FROM ai_settings WHERE key='default_model_id'").get(), undefined);
     const finalCatalog = await request(app).get('/api/v1/models').expect(200);
     assert.equal(finalCatalog.body.models.some((item) => item.id.startsWith('managed-test:')), false);
