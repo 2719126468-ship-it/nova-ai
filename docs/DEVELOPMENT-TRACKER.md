@@ -7,7 +7,7 @@
 
 ## Progress
 
-**8 / 12 complete** · 1 in progress · 3 planned
+**9 / 12 complete** · 1 in progress · 2 planned
 
 The existing V0.1 implementation is the foundation. Do not rebuild or replace working authentication, chat, SSE, model routing, Studio, account, or data-lifecycle flows. Extend them incrementally.
 
@@ -42,8 +42,8 @@ Remaining model-system follow-ups: automatic model discovery, controlled failove
 | ID | Priority | Task | Status | Completion criteria |
 |---|---|---|---|---|
 | B3-01 | P0 | Documents data model and API | **Complete** | Migration v7 adds user-owned Markdown documents with project association, ownership triggers, bounded content and versions; authenticated CRUD/list/search API, optimistic concurrency, account export/deletion lifecycle and regression tests; PR #11 CI run #71 passed API tests and production build; merged as 4866e8e. |
-| B3-02 | P0 | Documents editor and autosave | **In progress** | Added a protected Documents library and mobile-first editor, Markdown preview, project association, 850 ms debounced autosave with version checks, save/error/conflict states, reload-latest and save-as-copy recovery, and .md download. Await full branch CI before marking complete. |
-| B3-03 | P1 | Project context and file management | Planned | Add project instructions and organized project materials; implement upload only with file type/signature, size, isolation, retention, and parsing controls. |
+| B3-02 | P0 | Documents editor and autosave | **Complete** | Protected Documents library and mobile-first Markdown editor, edit/preview, project association, 850 ms debounced autosave with optimistic version checks, save/error/conflict states, reload-latest and save-as-copy recovery, and .md download; PR #12 CI run #74 and post-merge main CI run #75 passed; merged to main. |
+| B3-03 | P1 | Project context and file management | **In progress** | Add project instructions and organized project materials; implement upload only with file type/signature, size, isolation, retention, and parsing controls. |
 | B3-04 | P1 | Real Research search and citations | Planned | Use a real search provider, preserve source URLs/metadata, distinguish retrieved facts from model synthesis, and produce cited reports. |
 
 Target work loop: **Create project → chat with AI → generate document → save it into the project → continue editing.**
@@ -114,6 +114,13 @@ Documents comes before project context/file management, and Research follows tho
 - Added a mobile-first Markdown editor with edit/preview modes, project association, character limit, save status, and Markdown download.
 - Autosave debounces edits by 850 ms and sends the document's current `expectedVersion`; transient failures wait for an explicit retry or a new edit rather than retrying forever.
 - A 409 version conflict preserves the local editor state and offers reload-latest or save-as-copy recovery. B3-02 remains in progress until CI and interaction checks pass.
+
+## 2026-11-07 — B3-02 completed; B3-03 started
+
+- PR #12 merged to main with the mobile-first Documents library/editor, Markdown preview/export, project association and optimistic-concurrency autosave.
+- Autosave runs after an 850 ms typing pause; failures wait for a new edit or explicit retry. A 409 conflict preserves the local editor buffer and offers reload-latest or save-as-copy.
+- PR CI run #74 and post-merge main CI run #75 both passed API tests and the production client build.
+- B3-03 is in progress: project instructions and opt-in project materials, with upload size/type/content validation, account isolation, storage lifecycle and bounded context injection.
 
 ## Completed work log
 
