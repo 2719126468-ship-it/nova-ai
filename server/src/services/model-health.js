@@ -28,7 +28,7 @@ function readProviderContextWindow(entry) {
   for (const field of fields) {
     const raw = entry?.[field];
     const value = typeof raw === 'number' ? raw
-      : (typeof raw === 'string' && /^\\d+$/.test(raw.trim()) ? Number(raw) : null);
+      : (typeof raw === 'string' && /^\d+$/.test(raw.trim()) ? Number(raw) : null);
     if (Number.isSafeInteger(value) && value > 0 && value <= 10000000) return value;
   }
   return null;
