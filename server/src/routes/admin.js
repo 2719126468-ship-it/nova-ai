@@ -250,7 +250,7 @@ router.put('/providers/:id', (req, res, next) => {
       ? encryptProviderSecret(input.apiKey)
       : current.api_key_encrypted;
     const models = input.models ? normalizeStoredModels(input.models) : JSON.parse(current.models_json);
-      const nextBaseUrl = input.baseUrl ? input.baseUrl.replace(/\/+$/, '') : current.base_url;
+    const nextBaseUrl = input.baseUrl ? input.baseUrl.replace(/\/+$/, '') : current.base_url;
     const contextSourceChanged = nextBaseUrl !== current.base_url || input.models !== undefined;
     db.prepare(`
       UPDATE ai_providers
