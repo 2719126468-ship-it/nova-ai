@@ -42,7 +42,7 @@ Remaining model-system follow-ups: automatic model discovery, controlled failove
 | ID | Priority | Task | Status | Completion criteria |
 |---|---|---|---|---|
 | B3-01 | P0 | Documents data model and API | **Complete** | Migration v7 adds user-owned Markdown documents with project association, ownership triggers, bounded content and versions; authenticated CRUD/list/search API, optimistic concurrency, account export/deletion lifecycle and regression tests; PR #11 CI run #71 passed API tests and production build; merged as 4866e8e. |
-| B3-02 | P0 | Documents editor and autosave | **Complete** | Protected Documents library and mobile-first Markdown editor, edit/preview, project association, 850 ms debounced autosave with optimistic version checks, save/error/conflict states, reload-latest and save-as-copy recovery, and .md download; PR #12 CI run #74 and post-merge main CI run #75 passed; merged to main. |
+| B3-02 | P0 | Documents editor and autosave | **Complete** | Protected mobile-first Markdown library/editor, edit/preview, project association, 850 ms autosave, optimistic conflict recovery, Markdown export, and Chat action to save a completed assistant answer as a new document with optional project association and direct open link; PR #12 and PR #14 CI passed. |
 | B3-03 | P1 | Project context and file management | **Complete** | Migration v8, versioned project instructions, owner-scoped UTF-8 text file upload/download/delete, atomic quotas, explicit context opt-in, bounded untrusted excerpts, protected mobile-first UI, Chat context status, account export/deletion, and cross-account tests. PR #13 CI run #86 passed 33/33 API tests and production build. | Instructions are versioned; TXT/MD/CSV/JSON files are UTF-8 validated, limited to 2 MiB each and 10 MiB/20 files per project, default off for AI context, and isolated by account/project ownership. |
 | B3-04 | P1 | Real Research search and citations | Planned | Use a real search provider, preserve source URLs/metadata, distinguish retrieved facts from model synthesis, and produce cited reports. |
 
@@ -138,6 +138,13 @@ Documents comes before project context/file management, and Research follows tho
 - Added the Project Context index/editor to protected React routes and signed-in navigation. Uploads use the configured API origin, include session credentials, and are covered by CORS request-header allowlisting.
 - Account export includes project instructions and file contents; account deletion cascades project files. Regression tests cover ownership, validation, opt-in, prompt-context construction, downloads, and project/account lifecycle.
 - PR #13 CI run #85 passed: 33/33 API tests and the production client build. Merge PR #13 before starting B3-04 Research search.
+
+## 2026-11-07 — Chat → Documents workflow completed
+
+- PR #14 adds a save action to every completed assistant answer in Chat. The saved document preserves the original Markdown content and suggests a title from the preceding user prompt.
+- Users can save to their private Documents library or associate the document with one of their owned projects. The existing owner-scoped Documents API validates project ownership; no new table or migration is required.
+- After a successful save, the answer offers a direct link to open the new document. The dialog handles project-list/save errors and enforces the existing 120-character title and 200,000-character content limits.
+- PR #14 CI run #90 passed: 33/33 API tests and production Vite build. Real Android interaction remains part of B4-01 device verification.
 
 ## Completed work log
 
