@@ -21,6 +21,9 @@ function describeContextPolicy(policy) {
   if (!policy) return '';
   const parts = [];
   if (policy.historyTruncated) parts.push('已按预算缩短较早历史，本条问题完整保留');
+  if (policy.projectContextIncluded) parts.push('已载入项目指令与 ' + (policy.projectFilesIncluded || 0) + ' 个已选文件');
+  if (policy.projectContextOmitted) parts.push('项目上下文因本轮输入预算不足而暂未载入');
+  if (policy.projectContextTruncated) parts.push('项目指令或文件内容已按安全上限截取');
   if (policy.modelContextWindowTokens) {
     parts.push('上下文窗口 ' + policy.modelContextWindowTokens.toLocaleString() + '（' + (contextSourceLabels[policy.modelContextWindowSource] || '未知来源') + '）');
   } else {
