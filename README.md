@@ -221,6 +221,7 @@ API 集成测试会使用临时 SQLite 文件，不会覆盖你的开发数据�
 ## 产品基线与代码审计
 
 - [正式产品基线 / NOVA-PRD-1.0](docs/PRODUCT-BASELINE.md)
+- [NOVA 开发任务追踪（V0.1 → V0.2）](docs/DEVELOPMENT-TRACKER.md)
 - [API v1 接口契约](docs/API-V1.md)
 - [V0.1 源码实现审计](docs/audits/NOVA-V0.1-IMPLEMENTATION-AUDIT.md)
 - [技术债清单](docs/audits/TECH-DEBT.md)
