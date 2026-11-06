@@ -107,6 +107,24 @@ const migrations = [
       `);
     },
   },
+,{
+    version: 6,
+    name: 'provider-reported-model-context-windows',
+    up(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS model_context_windows (
+          provider_id TEXT NOT NULL,
+          upstream_model_id TEXT NOT NULL,
+          context_tokens INTEGER NOT NULL CHECK(context_tokens BETWEEN 1 AND 10000000),
+          source TEXT NOT NULL CHECK(source = 'provider_reported'),
+          checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY(provider_id, upstream_model_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_model_context_windows_checked
+          ON model_context_windows(checked_at);
+      `);
+    },
+  },
 
 ];
 
