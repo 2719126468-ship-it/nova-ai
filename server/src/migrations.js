@@ -165,7 +165,7 @@ const migrations = [
       `);
     },
   },
-,{
+  {
     version: 8,
     name: 'project-instructions-and-material-files',
     up(database) {
