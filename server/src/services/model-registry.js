@@ -3,6 +3,7 @@ import { db } from '../db.js';
 import { decryptProviderSecret } from './provider-secrets.js';
 
 const PROVIDER_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
+const SUPPORTED_TOKENIZERS = new Set(['auto', 'cl100k_base', 'o200k_base', 'none']);
 
 function parseProviderConfig(raw) {
   try {
@@ -13,7 +14,7 @@ function parseProviderConfig(raw) {
   }
 }
 
-function normalizeProvider(provider) {
+function normalizeProvider(provider, source = 'environment_configured') {
   if (!provider || typeof provider !== 'object' || Array.isArray(provider)) return null;
   if (typeof provider.id !== 'string' || !PROVIDER_ID_PATTERN.test(provider.id)) return null;
 
@@ -53,6 +54,7 @@ function normalizeProvider(provider) {
         ? [...new Set(model.capabilities.filter((item) => typeof item === 'string' && item.length <= 40))].slice(0, 20)
         : ['chat', 'text'],
       contextLimit: Number.isSafeInteger(model.contextLimit) && model.contextLimit > 0 ? model.contextLimit : null,
+      tokenizer: typeof model.tokenizer === 'string' && SUPPORTED_TOKENIZERS.has(model.tokenizer) ? model.tokenizer : 'auto',
     });
   }
 
@@ -62,6 +64,7 @@ function normalizeProvider(provider) {
     baseUrl,
     apiKey,
     configured: Boolean(validBaseUrl && apiKey),
+    source,
     models,
   };
 }
@@ -74,7 +77,7 @@ function loadEnvironmentProviders() {
     const providers = [];
     const seenProviderIds = new Set();
     for (const entry of parsed) {
-      const provider = normalizeProvider(entry);
+      const provider = normalizeProvider(entry, 'environment_configured');
       if (!provider || seenProviderIds.has(provider.id)) continue;
       seenProviderIds.add(provider.id);
       providers.push(provider);
@@ -97,7 +100,9 @@ function loadEnvironmentProviders() {
           enabled: true,
           capabilities: ['chat', 'text'],
           contextLimit: null,
+          tokenizer: 'auto',
         }],
+        source: 'environment_configured',
       }],
       configurationError: null,
     };
@@ -126,7 +131,7 @@ function loadDatabaseProviders(reservedIds) {
         apiKey: decryptProviderSecret(row.api_key_encrypted),
         enabled: row.enabled === 1,
         models,
-      });
+      }, 'admin_configured');
       if (!provider) throw new Error('Invalid provider configuration.');
       providers.push(provider);
     } catch (error) {
@@ -155,6 +160,9 @@ function getStoredDefaultModelId() {
 }
 
 function buildCatalog(privateProviders, configurationError) {
+  const reportedWindows = new Map(db.prepare(
+    'SELECT provider_id,upstream_model_id,context_tokens,checked_at FROM model_context_windows',
+  ).all().map((row) => [row.provider_id + ':' + row.upstream_model_id, row]));
   const models = privateProviders.flatMap((provider) => provider.models.map((model) => ({
     id: model.id,
     name: model.name,
@@ -166,7 +174,15 @@ function buildCatalog(privateProviders, configurationError) {
     status: 'unknown',
     statusLabel: provider.configured ? 'NOT_CHECKED' : 'NOT_CONFIGURED',
     capabilities: model.capabilities,
-    contextLimit: model.contextLimit,
+    contextLimit: reportedWindows.get(provider.id + ':' + model.upstreamModelId)?.context_tokens ?? model.contextLimit,
+    contextLimitSource: reportedWindows.has(provider.id + ':' + model.upstreamModelId)
+      ? 'provider_reported'
+      : (model.contextLimit ? (provider.source === 'admin_configured' ? 'admin_configured' : 'environment_configured') : 'unknown'),
+    contextLimitCheckedAt: reportedWindows.get(provider.id + ':' + model.upstreamModelId)?.checked_at || null,
+    tokenizer: model.tokenizer || 'auto',
+    tokenizerSource: model.tokenizer && model.tokenizer !== 'auto' && model.tokenizer !== 'none'
+      ? 'admin_configured'
+      : (model.tokenizer === 'none' ? 'unknown' : 'automatic'),
   })));
 
   const requestedDefault = config.aiDefaultModelId || config.aiModel || getStoredDefaultModelId();
@@ -215,6 +231,9 @@ export function resolveModel(modelId) {
     baseUrl: provider.baseUrl,
     apiKey: provider.apiKey,
     upstreamModelId: model.upstreamModelId,
+    contextLimit: selected.contextLimit,
+    contextLimitSource: selected.contextLimitSource,
+    tokenizer: model.tokenizer || 'auto',
     name: model.name,
   };
 }
