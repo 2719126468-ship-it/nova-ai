@@ -85,7 +85,7 @@ function readRecentHistory(conversationId, beforeMessageId = null) {
   };
 }
 
-function readProjectPromptContext(conversationId, userId) {
+export function readProjectPromptContext(conversationId, userId) {
   if (!Number.isSafeInteger(Number(userId)) || Number(userId) <= 0) {
     return { message: null, filesIncluded: 0, truncated: false };
   }
