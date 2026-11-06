@@ -80,7 +80,8 @@ const migrations = [
           ON message_versions(message_id, created_at DESC, id DESC);
       `);
     },
-  },,{
+  },
+  {
     version: 5,
     name: 'server-managed-ai-providers',
     up(database) {
