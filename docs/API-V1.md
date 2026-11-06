@@ -91,7 +91,9 @@ All endpoints below require an authenticated session.
 | DELETE | /api/v1/conversations/:id | Delete a conversation and its messages |
 | POST | /api/v1/conversations/:id/messages/stream | Send a message and stream the assistant response |
 | PUT | /api/v1/conversations/:id/messages/:messageId/stream | Edit a previous user message and stream its replacement response |
-| POST | /api/v1/conversations/:id/messages/:messageId/retry/stream | Retry the latest failed/cancelled assistant response |\n| GET | /api/v1/conversations/:id/messages/:messageId/versions | List prior versions of an assistant answer |\n| POST | /api/v1/conversations/:id/messages/:messageId/restore | Restore a selected prior answer version |
+| POST | /api/v1/conversations/:id/messages/:messageId/retry/stream | Retry the latest failed/cancelled assistant response |
+| GET | /api/v1/conversations/:id/messages/:messageId/versions | List prior versions of an assistant answer |
+| POST | /api/v1/conversations/:id/messages/:messageId/restore | Restore a selected prior answer version |
 
 The conversation owner is checked on every operation. A user cannot read, rename, send messages to, or delete another user's conversation.
 
