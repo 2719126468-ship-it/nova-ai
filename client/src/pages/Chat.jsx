@@ -168,13 +168,14 @@ export default function Chat() {
     if (!message?.id || message.role !== 'assistant' || message.status !== 'complete' || sending) return;
     const precedingPrompt = messages.slice(0, messageIndex).reverse().find((item) => item.role === 'user');
     const suggestedTitle = String(precedingPrompt?.content || '')
-      .replace(/[\\r\\n\\t]+/g, ' ')
-      .replace(/\\s+/g, ' ')
+      .replace(/[\r\n\t]+/g, ' ')
+      .replace(/\s+/g, ' ')
       .trim()
       .slice(0, 100) || 'AI 回答';
     setSaveDocumentDialog({ messageId: message.id, content: message.content || '' });
     setSaveDocumentTitle(suggestedTitle);
     setSaveDocumentProjectId('');
+    setSaveDocumentProjects([]);
     setSaveDocumentError('');
     setLoadingSaveDocumentProjects(true);
     try {
