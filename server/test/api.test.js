@@ -362,3 +362,184 @@ test('AI generation requests are rate-limited per authenticated user', async () 
   assert.equal(limited.body.error, 'AI_RATE_LIMITED');
   assert.equal(limited.body.message, '发送过于频繁，请稍后再试。');
 });
+
+
+test('users cannot read, change, message, or delete another account resources', async () => {
+  const owner = request.agent(app);
+  await owner.post('/api/v1/auth/login').set(originHeaders)
+    .send({ email: 'test@example.com', password: 'a-strong-test-password' }).expect(200);
+  const project = await owner.post('/api/v1/projects').set(originHeaders)
+    .send({ title: 'Private project', description: 'owner only', content: 'private data' }).expect(201);
+  const conversation = await owner.post('/api/v1/conversations').set(originHeaders)
+    .send({ title: 'Private conversation' }).expect(201);
+
+  const other = request.agent(app);
+  await other.post('/api/v1/auth/register').set(originHeaders).send({
+    email: 'isolation@example.com',
+    name: 'Isolation Tester',
+    password: 'isolation-test-password-strong',
+  }).expect(201);
+
+  await other.get('/api/v1/projects/' + project.body.project.id).set(originHeaders).expect(404);
+  await other.put('/api/v1/projects/' + project.body.project.id).set(originHeaders)
+    .send({ title: 'Take over', description: '', content: '' }).expect(404);
+  await other.delete('/api/v1/projects/' + project.body.project.id).set(originHeaders).expect(404);
+
+  await other.get('/api/v1/conversations/' + conversation.body.conversation.id).set(originHeaders).expect(404);
+  await other.patch('/api/v1/conversations/' + conversation.body.conversation.id).set(originHeaders)
+    .send({ title: 'Take over conversation' }).expect(404);
+  await other.post('/api/v1/conversations/' + conversation.body.conversation.id + '/messages/stream')
+    .set(originHeaders).send({ content: 'Should never be stored' }).expect(404);
+  await other.delete('/api/v1/conversations/' + conversation.body.conversation.id).set(originHeaders).expect(404);
+
+  const ownerProject = await owner.get('/api/v1/projects/' + project.body.project.id).set(originHeaders).expect(200);
+  const ownerConversation = await owner.get('/api/v1/conversations/' + conversation.body.conversation.id)
+    .set(originHeaders).expect(200);
+  assert.equal(ownerProject.body.project.content, 'private data');
+  assert.deepEqual(ownerConversation.body.messages, []);
+});
+
+test('upstream authentication, rate-limit, server, and empty-stream failures are classified and saved', async () => {
+  providerServer = createServer((incoming, outgoing) => {
+    let body = '';
+    incoming.setEncoding('utf8');
+    incoming.on('data', (chunk) => { body += chunk; });
+    incoming.on('end', () => {
+      const payload = JSON.parse(body);
+      const prompt = payload.messages.at(-1).content;
+      if (prompt.includes('provider-401')) {
+        outgoing.writeHead(401, { 'Content-Type': 'application/json' });
+        outgoing.end(JSON.stringify({ error: 'invalid upstream key' }));
+      } else if (prompt.includes('provider-429')) {
+        outgoing.writeHead(429, { 'Content-Type': 'application/json' });
+        outgoing.end(JSON.stringify({ error: 'upstream quota detail' }));
+      } else if (prompt.includes('provider-503')) {
+        outgoing.writeHead(503, { 'Content-Type': 'application/json' });
+        outgoing.end(JSON.stringify({ error: 'private upstream detail' }));
+      } else {
+        outgoing.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        outgoing.end('data: [DONE]\n\n');
+      }
+    });
+  });
+  await new Promise((resolve) => providerServer.listen(0, '127.0.0.1', resolve));
+  const previous = {
+    aiBaseUrl: config.aiBaseUrl,
+    aiApiKey: config.aiApiKey,
+    aiModel: config.aiModel,
+  };
+  config.aiBaseUrl = 'http://127.0.0.1:' + providerServer.address().port + '/v1';
+  config.aiApiKey = 'provider-test-secret';
+  config.aiModel = 'mock-error-model';
+
+  try {
+    const agent = request.agent(app);
+    await agent.post('/api/v1/auth/register').set(originHeaders).send({
+      email: 'provider-errors@example.com',
+      name: 'Provider Error Tester',
+      password: 'provider-error-password-strong',
+    }).expect(201);
+    const created = await agent.post('/api/v1/conversations').set(originHeaders)
+      .send({ title: 'Provider errors' }).expect(201);
+    const id = created.body.conversation.id;
+    const url = '/api/v1/conversations/' + id + '/messages/stream';
+    const cases = [
+      ['provider-401', 'AI_PROVIDER_ERROR'],
+      ['provider-429', 'AI_PROVIDER_RATE_LIMITED'],
+      ['provider-503', 'AI_PROVIDER_UNAVAILABLE'],
+      ['provider-empty', 'AI_EMPTY_RESPONSE'],
+    ];
+
+    for (const [prompt, code] of cases) {
+      const response = await agent.post(url).set(originHeaders)
+        .send({ content: prompt })
+        .buffer(true)
+        .parse((incoming, callback) => {
+          let result = '';
+          incoming.setEncoding('utf8');
+          incoming.on('data', (chunk) => { result += chunk; });
+          incoming.on('end', () => callback(null, result));
+          incoming.on('error', callback);
+        }).expect(200);
+
+      assert.match(response.body, /event: message_error/);
+      assert.match(response.body, new RegExp('"code":"' + code + '"'));
+      assert.equal(response.body.includes('provider-test-secret'), false);
+      assert.equal(response.body.includes('private upstream detail'), false);
+      assert.equal(response.body.includes('upstream quota detail'), false);
+
+      const saved = db.prepare(
+        "SELECT status,error_code FROM messages WHERE conversation_id=? AND role='assistant' ORDER BY id DESC LIMIT 1",
+      ).get(id);
+      assert.deepEqual(saved, { status: 'failed', error_code: code });
+    }
+  } finally {
+    config.aiBaseUrl = previous.aiBaseUrl;
+    config.aiApiKey = previous.aiApiKey;
+    config.aiModel = previous.aiModel;
+    await new Promise((resolve) => providerServer.close(resolve));
+    providerServer = null;
+  }
+});
+
+test('provider timeout is classified and saved as a failed message', async () => {
+  providerServer = createServer((incoming, outgoing) => {
+    incoming.resume();
+    incoming.on('end', () => {
+      setTimeout(() => {
+        if (!outgoing.destroyed) {
+          outgoing.writeHead(200, { 'Content-Type': 'text/event-stream' });
+          outgoing.end('data: {"choices":[{"delta":{"content":"Too late"}}]}\n\ndata: [DONE]\n\n');
+        }
+      }, 100);
+    });
+  });
+  await new Promise((resolve) => providerServer.listen(0, '127.0.0.1', resolve));
+  const previous = {
+    aiBaseUrl: config.aiBaseUrl,
+    aiApiKey: config.aiApiKey,
+    aiModel: config.aiModel,
+    aiTimeoutMs: config.aiTimeoutMs,
+  };
+  config.aiBaseUrl = 'http://127.0.0.1:' + providerServer.address().port + '/v1';
+  config.aiApiKey = 'timeout-test-secret';
+  config.aiModel = 'mock-timeout-model';
+  config.aiTimeoutMs = 20;
+
+  try {
+    const agent = request.agent(app);
+    await agent.post('/api/v1/auth/register').set(originHeaders).send({
+      email: 'provider-timeout@example.com',
+      name: 'Provider Timeout Tester',
+      password: 'provider-timeout-password-strong',
+    }).expect(201);
+    const created = await agent.post('/api/v1/conversations').set(originHeaders)
+      .send({ title: 'Provider timeout' }).expect(201);
+    const id = created.body.conversation.id;
+    const url = '/api/v1/conversations/' + id + '/messages/stream';
+
+    const response = await agent.post(url).set(originHeaders).send({ content: 'Trigger timeout' })
+      .buffer(true)
+      .parse((incoming, callback) => {
+        let result = '';
+        incoming.setEncoding('utf8');
+        incoming.on('data', (chunk) => { result += chunk; });
+        incoming.on('end', () => callback(null, result));
+        incoming.on('error', callback);
+      }).expect(200);
+
+    assert.match(response.body, /event: message_error/);
+    assert.match(response.body, /"code":"AI_TIMEOUT"/);
+    const saved = db.prepare(
+      "SELECT status,error_code FROM messages WHERE conversation_id=? AND role='assistant'",
+    ).get(id);
+    assert.deepEqual(saved, { status: 'failed', error_code: 'AI_TIMEOUT' });
+  } finally {
+    config.aiBaseUrl = previous.aiBaseUrl;
+    config.aiApiKey = previous.aiApiKey;
+    config.aiModel = previous.aiModel;
+    config.aiTimeoutMs = previous.aiTimeoutMs;
+    await new Promise((resolve) => providerServer.close(resolve));
+    providerServer = null;
+  }
+});
