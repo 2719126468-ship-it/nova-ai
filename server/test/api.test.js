@@ -102,7 +102,7 @@ test('database migrations add message lifecycle fields and are idempotent', () =
   assert.ok(columns.has('status'));
   assert.ok(columns.has('error_code'));
   const versions = db.prepare('SELECT version FROM schema_migrations ORDER BY version').all();
-  assert.deepEqual(versions.map((row) => row.version), [1, 2, 3, 4, 5]);
+  assert.deepEqual(versions.map((row) => row.version), [1, 2, 3, 4, 5, 6]);
   const versionColumns = new Set(db.prepare('PRAGMA table_info(message_versions)').all().map((column) => column.name));
   assert.ok(versionColumns.has('message_id'));
   assert.ok(versionColumns.has('content'));
@@ -125,7 +125,7 @@ test('versioned models endpoint does not claim an unconfigured model is connecte
   const response = await request(app).get('/api/v1/models').expect(200);
   assert.equal(response.body.configured, false);
   assert.deepEqual(response.body.models, []);
-  assert.deepEqual(response.body.contextPolicy, { unit: 'characters', maxMessageContentCharacters: 40000, tokenLimit: null });
+  assert.deepEqual(response.body.contextPolicy, { maxMessageContentCharacters: 40000, outputReserveTokens: 2048, safetyMarginPercent: 10, mode: 'per_model', note: '模型上下文上限和输入 Token 数会分别标注来源；字符预算始终作为额外硬限制。' });
 });
 
 test('users can rename conversations through the versioned API', async () => {
