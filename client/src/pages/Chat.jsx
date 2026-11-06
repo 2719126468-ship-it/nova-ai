@@ -124,7 +124,7 @@ export default function Chat() {
       return;
     }
     setVersionMessageId(message.id);
-    if (Object.hasOwn(versionsByMessage, message.id)) return;
+    if (Object.prototype.hasOwnProperty.call(versionsByMessage, message.id)) return;
 
     setLoadingVersionsId(message.id);
     try {
