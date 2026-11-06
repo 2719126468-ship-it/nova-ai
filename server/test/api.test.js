@@ -621,3 +621,104 @@ test('context character budget keeps the newest complete turn and preserves curr
     providerServer = null;
   }
 });
+
+
+test('client disconnect aborts upstream generation and persists cancelled status', async () => {
+  let signalUpstreamClosed;
+  const upstreamClosed = new Promise((resolve) => { signalUpstreamClosed = resolve; });
+  providerServer = createServer((incoming, outgoing) => {
+    incoming.resume();
+    incoming.on('end', () => {
+      outgoing.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      outgoing.write('data: {"choices":[{"delta":{"content":"partial-content"}}]}\n\n');
+      outgoing.on('close', signalUpstreamClosed);
+    });
+  });
+  await new Promise((resolve) => providerServer.listen(0, '127.0.0.1', resolve));
+
+  const previous = {
+    aiBaseUrl: config.aiBaseUrl,
+    aiApiKey: config.aiApiKey,
+    aiModel: config.aiModel,
+  };
+  config.aiBaseUrl = 'http://127.0.0.1:' + providerServer.address().port + '/v1';
+  config.aiApiKey = 'cancel-test-secret';
+  config.aiModel = 'mock-cancel-model';
+
+  const clientServer = createServer(app);
+  try {
+    const registration = await request(app).post('/api/v1/auth/register').set(originHeaders).send({
+      email: 'provider-cancel@example.com',
+      name: 'Provider Cancel Tester',
+      password: 'provider-cancel-password-strong',
+    }).expect(201);
+    const cookie = registration.headers['set-cookie']
+      .find((value) => value.startsWith('nova_session='))
+      .split(';')[0];
+    const created = await request(app).post('/api/v1/conversations')
+      .set({ ...originHeaders, Cookie: cookie })
+      .send({ title: 'Cancellation test' }).expect(201);
+    const conversationId = created.body.conversation.id;
+
+    await new Promise((resolve) => clientServer.listen(0, '127.0.0.1', resolve));
+    const controller = new AbortController();
+    const response = await fetch(
+      'http://127.0.0.1:' + clientServer.address().port + '/api/v1/conversations/' + conversationId + '/messages/stream',
+      {
+        method: 'POST',
+        headers: {
+          ...originHeaders,
+          Cookie: cookie,
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+        },
+        body: JSON.stringify({ content: 'Stop this generation' }),
+        signal: controller.signal,
+      },
+    );
+    assert.equal(response.status, 200);
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let streamed = '';
+    let aborted = false;
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        streamed += decoder.decode(value, { stream: true });
+        if (streamed.includes('partial-content')) {
+          aborted = true;
+          controller.abort();
+          break;
+        }
+      }
+    } catch (error) {
+      if (error.name !== 'AbortError') throw error;
+    }
+    assert.equal(aborted, true);
+    assert.match(streamed, /event: message_delta/);
+
+    await Promise.race([
+      upstreamClosed,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Upstream request was not aborted')), 1500)),
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    const saved = db.prepare(
+      "SELECT status,error_code,content FROM messages WHERE conversation_id=? AND role='assistant' ORDER BY id DESC LIMIT 1",
+    ).get(conversationId);
+    assert.deepEqual(saved, {
+      status: 'cancelled',
+      error_code: 'AI_REQUEST_CANCELLED',
+      content: 'partial-content',
+    });
+  } finally {
+    if (clientServer.listening) await new Promise((resolve) => clientServer.close(resolve));
+    config.aiBaseUrl = previous.aiBaseUrl;
+    config.aiApiKey = previous.aiApiKey;
+    config.aiModel = previous.aiModel;
+    if (providerServer?.listening) await new Promise((resolve) => providerServer.close(resolve));
+    providerServer = null;
+  }
+});

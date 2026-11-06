@@ -215,7 +215,7 @@ router.post('/:id/messages/stream', generationLimiter, async (req, res, next) =>
   let clientDisconnected = false;
   let partialContent = '';
   const onClose = () => {
-    if (!res.writableEnded && !res.destroyed) {
+    if (!res.writableEnded) {
       clientDisconnected = true;
       controller.abort();
     }
