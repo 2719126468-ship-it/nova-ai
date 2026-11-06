@@ -7,7 +7,7 @@
 
 ## Progress
 
-**4 / 12 complete** · 0 in progress · 8 planned
+**4 / 12 complete** · 1 in progress · 7 planned
 
 The existing V0.1 implementation is the foundation. Do not rebuild or replace working authentication, chat, SSE, model routing, Studio, account, or data-lifecycle flows. Extend them incrementally.
 
@@ -19,7 +19,7 @@ The existing V0.1 implementation is the foundation. Do not rebuild or replace wo
 | B1-02 | P0 | Review and consolidate Provider error handling | **Complete** | Stable NOVA codes cover upstream authentication/permission, rejected requests, rate limits, outages, network failure, timeout, malformed JSON/SSE, empty response, stream errors, and cancellation; raw upstream details are redacted and regression-tested. |
 | B1-03 | P0 | Design and implement persistent Usage records | **Complete** | Migration v3 persists request lifecycle, provider/model, duration, error code, and upstream-reported tokens across JSON, SSE, edit, and retry paths. Export/deletion and admin-only aggregates are covered; unknown token/cost values remain null. |
 | B1-04 | P1 | Add code syntax highlighting and code-block copy | **Complete** | Common JS/TS, Python, JSON, Bash, CSS, XML/HTML, SQL, YAML, Markdown, Java, Go, and Diff grammars are registered selectively; per-block copy preserves only code text. Highlighter loads only for fenced-code messages and the mobile layout uses horizontal scrolling. |
-| B1-05 | P1 | Add assistant answer version history and undo | Planned | Replaced answers remain recoverable; users can inspect and restore a prior answer without corrupting conversation order or context. |
+| B1-05 | P1 | Add assistant answer version history and undo | In progress | Preserve replaced assistant answers across successful edit/regeneration and retry; expose owner-scoped version listing and reversible restore; export/deletion and failure-safety tests pass. |
 
 ### Batch 1 implementation notes
 
@@ -105,3 +105,12 @@ Documents comes before project context/file management, and Research follows tho
 - Added NOVA light/dark theme-aware syntax colors, responsive horizontal scrolling, and mobile-sized code typography.
 - Highlighting is dynamically loaded only when a message contains a fenced code block. Vite output: Chat route chunk 14.27 kB (gzip 5.43 kB); isolated highlighter chunk 168.54 kB (gzip 54.24 kB); main entry 265.27 kB (gzip 84.83 kB).
 - GitHub Actions run #50 passed: dependency install, API tests, and production web build.
+
+## 2026-11-07 — B1-05 implementation in progress
+
+- Added SQLite migration v4 for `message_versions`, linked to assistant messages with cascade deletion.
+- Successful edit/regeneration archives the replaced assistant answer and carries forward any earlier versions before the old branch is removed.
+- Successful retry archives the former failed/cancelled response and preserves its prior versions. Failed/cancelled replacements do not modify history.
+- Added owner-scoped version list and restore APIs. Restore swaps the selected historical answer with the current answer so both remain recoverable.
+- Account export includes version content; deleting a parent message/account cascades the saved versions.
+- Added a Chat history panel with source/time/preview and a restore action. Final acceptance is pending CI validation.
