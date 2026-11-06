@@ -4,7 +4,7 @@
 
 **当前版本：`0.1.0` · 开发基础版**
 
-NOVA 不是静态展示模板。前端页面通过 REST API 读取和写入 SQLite 数据；登录使用服务端会话；个人项目、对话与研究内容都有持久化数据结构。AI 模型暂不绑定供应商，服务端预留 OpenAI-compatible Provider Adapter，由部署者自行填写地址、密钥和模型名称。
+NOVA 不是静态展示模板。前端页面通过 REST API 读取和写入 SQLite 数据；登录使用服务端会话；个人项目、Markdown 文档、对话与研究内容都有持久化数据结构。AI 模型暂不绑定供应商，服务端预留 OpenAI-compatible Provider Adapter，由部署者自行填写地址、密钥和模型名称。
 
 ## 功能范围
 
@@ -15,8 +15,9 @@ NOVA 不是静态展示模板。前端页面通过 REST API 读取和写入 SQLi
 | Research | 分类筛选、搜索、文章详情、Markdown 阅读 | 已实现；初始文章是示例内容 |
 | Research CMS | 管理员创建、编辑、发布、删除文章 | 已实现 |
 | Studio | 项目创建、列表、详情编辑、手动保存、项目删除、关联 AI 对话 | 核心项目工作流已实现 |
+| Documents | 用户私有 Markdown 文档、项目关联、CRUD API、版本冲突保护 | 后端 API 已实现；编辑器与自动保存待完成 |
 | User Center | 注册、登录、注销、个人资料修改、密码修改、项目入口 | 已实现 |
-| Models | 多 Provider 模型目录、启用状态与 Chat 模型切换 | 基础配置已实现；健康探测/管理配置待做 |
+| Models | 多 Provider 模型目录、管理员 Provider 管理、密钥加密、默认模型、按需健康探测、上下文预算与 Chat 模型切换 | 基础管理已实现；原生 Anthropic 与浏览器登录 Provider 待做 |
 | Pricing | 套餐说明 | 展示版；没有接入收费或支付 |
 | Developers | API 路由、认证与本地运行说明 | 已实现 |
 | Admin | 角色保护、统计概览、用户角色管理、研究 CMS | 已实现 |
@@ -57,7 +58,7 @@ nova-ai/
 │   ├── scripts/              # 管理员初始化工具
 │   ├── src/
 │   │   ├── middleware/       # 身份认证、请求来源校验
-│   │   ├── routes/            # Auth、Projects、Conversations、Research、Admin
+│   │   ├── routes/            # Auth、Projects、Documents、Conversations、Research、Admin
 │   │   ├── services/          # AI Provider Adapter
 │   │   ├── app.js
 │   │   ├── config.js
