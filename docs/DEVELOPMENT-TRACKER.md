@@ -7,7 +7,7 @@
 
 ## Progress
 
-**3 / 12 complete** · 0 in progress · 9 planned
+**4 / 12 complete** · 0 in progress · 8 planned
 
 The existing V0.1 implementation is the foundation. Do not rebuild or replace working authentication, chat, SSE, model routing, Studio, account, or data-lifecycle flows. Extend them incrementally.
 
@@ -18,7 +18,7 @@ The existing V0.1 implementation is the foundation. Do not rebuild or replace wo
 | B1-01 | P0 | Review PR #4 against current main and selectively integrate valid changes | **Complete** | Old PR was not merged directly. The non-streaming disconnect cancellation was ported to current main in PR #5; regression test and CI passed. Existing 6/min per-user limiter and single-generation guard were retained. |
 | B1-02 | P0 | Review and consolidate Provider error handling | **Complete** | Stable NOVA codes cover upstream authentication/permission, rejected requests, rate limits, outages, network failure, timeout, malformed JSON/SSE, empty response, stream errors, and cancellation; raw upstream details are redacted and regression-tested. |
 | B1-03 | P0 | Design and implement persistent Usage records | **Complete** | Migration v3 persists request lifecycle, provider/model, duration, error code, and upstream-reported tokens across JSON, SSE, edit, and retry paths. Export/deletion and admin-only aggregates are covered; unknown token/cost values remain null. |
-| B1-04 | P1 | Add code syntax highlighting and code-block copy | Planned | Common languages render correctly; copy action copies only code content; mobile layout remains usable. |
+| B1-04 | P1 | Add code syntax highlighting and code-block copy | **Complete** | Common JS/TS, Python, JSON, Bash, CSS, XML/HTML, SQL, YAML, Markdown, Java, Go, and Diff grammars are registered selectively; per-block copy preserves only code text. Highlighter loads only for fenced-code messages and the mobile layout uses horizontal scrolling. |
 | B1-05 | P1 | Add assistant answer version history and undo | Planned | Replaced answers remain recoverable; users can inspect and restore a prior answer without corrupting conversation order or context. |
 
 ### Batch 1 implementation notes
@@ -97,3 +97,11 @@ Documents comes before project context/file management, and Research follows tho
 - Tests cover migration, streaming and JSON token metadata, error redaction/classification, failed/cancelled usage, edit/retry accounting, export/deletion lifecycle, and administrator authorization.
 - GitHub Actions run #43 passed: API integration tests and production web build both succeeded.
 - Package version remains `0.1.0`; no release version change was made.
+
+## 2026-11-07 — B1-04 completed
+
+- Added `rehype-highlight` to the existing ReactMarkdown/remark-gfm pipeline, with 13 selectively registered language grammars and common aliases. Inline code and non-code Markdown remain on the existing renderer path.
+- Added a dedicated fenced-code toolbar with language label and per-block copy. Copy uses the browser clipboard API for only the selected code block and reports copied/failed state accessibly.
+- Added NOVA light/dark theme-aware syntax colors, responsive horizontal scrolling, and mobile-sized code typography.
+- Highlighting is dynamically loaded only when a message contains a fenced code block. Vite output: Chat route chunk 14.27 kB (gzip 5.43 kB); isolated highlighter chunk 168.54 kB (gzip 54.24 kB); main entry 265.27 kB (gzip 84.83 kB).
+- GitHub Actions run #50 passed: dependency install, API tests, and production web build.
