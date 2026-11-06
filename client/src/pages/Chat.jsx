@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, CirclePlus, Copy, Menu, MessageSquare, MoreHorizontal, PanelLeftClose, Pencil, RefreshCw, Send, Sparkles, Square, Trash2, UserRound } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api, apiStream, json } from '../lib/api';
@@ -8,6 +9,8 @@ import { ErrorNotice, Loading } from '../components/UI';
 
 export default function Chat() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const requestedConversationId = searchParams.get('conversation');
   const [conversations, setConversations] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -39,10 +42,13 @@ export default function Chat() {
   }, []);
   useEffect(() => {
     loadConversations().then((items) => {
+      const requestedId = Number(requestedConversationId);
+      const requested = items.find((item) => item.id === requestedId);
+      if (requested) return openConversation(requested.id);
       if (items.length) return openConversation(items[0].id);
       setMessages([]);
     }).catch((e) => setError(e.message)).finally(() => setLoading(false));
-  }, [loadConversations, openConversation]);
+  }, [loadConversations, openConversation, requestedConversationId]);
   useEffect(() => { api('/api/v1/models').then(setModelInfo).catch(() => setModelInfo(null)); }, []);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [messages, sending]);
 

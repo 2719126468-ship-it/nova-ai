@@ -134,7 +134,7 @@ export function StudioEditor() {
       {linkedConversations.length ? <div className="project-conversation-list">
         {linkedConversations.map((conversation) => <div className="project-conversation-row" key={conversation.id}>
           <div className="project-conversation-icon"><MessageSquare size={16} /></div>
-          <div className="project-conversation-copy"><strong>{conversation.title || '新对话'}</strong><span>{conversation.last_message || '这段对话还没有消息。'}</span></div>
+          <div className="project-conversation-copy"><Link to={`/chat?conversation=${conversation.id}`} className="project-conversation-title">{conversation.title || '新对话'}</Link><span>{conversation.last_message || '这段对话还没有消息。'}</span></div>
           <time>{new Date(`${conversation.updated_at.replace(' ', 'T')}Z`).toLocaleDateString()}</time>
           <button type="button" onClick={() => removeConversation(conversation.id)} aria-label="从项目中移除对话">移除</button>
         </div>)}

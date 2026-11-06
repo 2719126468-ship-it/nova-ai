@@ -52,3 +52,6 @@
   .project-conversation-row { gap: 8px; }
   .project-conversation-row time { display: none; }
 }
+
+.project-conversation-title { color: var(--ink); font-size: 10px; font-weight: 600; text-decoration: none; width: fit-content; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-conversation-title:hover { color: var(--accent-dark); }
