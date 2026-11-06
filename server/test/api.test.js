@@ -722,3 +722,167 @@ test('client disconnect aborts upstream generation and persists cancelled status
     providerServer = null;
   }
 });
+
+
+
+
+
+test('failed edit regeneration preserves the original conversation branch', async () => {
+  providerServer = createServer((incoming, outgoing) => {
+    incoming.resume();
+    incoming.on('end', () => {
+      outgoing.writeHead(503, { 'Content-Type': 'application/json' });
+      outgoing.end(JSON.stringify({ error: 'private provider failure detail' }));
+    });
+  });
+  await new Promise((resolve) => providerServer.listen(0, '127.0.0.1', resolve));
+
+  const previous = {
+    aiBaseUrl: config.aiBaseUrl,
+    aiApiKey: config.aiApiKey,
+    aiModel: config.aiModel,
+  };
+  config.aiBaseUrl = 'http://127.0.0.1:' + providerServer.address().port + '/v1';
+  config.aiApiKey = 'edit-failure-secret';
+  config.aiModel = 'mock-edit-failure-model';
+
+  try {
+    const agent = request.agent(app);
+    await agent.post('/api/v1/auth/register').set(originHeaders).send({
+      email: 'message-edit-failure@example.com',
+      name: 'Edit Failure Tester',
+      password: 'edit-failure-password-strong',
+    }).expect(201);
+    const created = await agent.post('/api/v1/conversations').set(originHeaders)
+      .send({ title: 'Edit failure' }).expect(201);
+    const conversationId = created.body.conversation.id;
+    const insert = db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)');
+    const firstUser = insert.run(conversationId, 'user', 'original first question');
+    insert.run(conversationId, 'assistant', 'original first answer');
+    insert.run(conversationId, 'user', 'original later question');
+    insert.run(conversationId, 'assistant', 'original later answer');
+
+    const response = await agent.put(
+      '/api/v1/conversations/' + conversationId + '/messages/' + firstUser.lastInsertRowid + '/stream',
+    ).set(originHeaders).send({ content: 'edited but not committed' })
+      .buffer(true)
+      .parse((incoming, callback) => {
+        let result = '';
+        incoming.setEncoding('utf8');
+        incoming.on('data', (chunk) => { result += chunk; });
+        incoming.on('end', () => callback(null, result));
+        incoming.on('error', callback);
+      }).expect(200);
+
+    assert.match(response.body, /event: message_start/);
+    assert.match(response.body, /event: message_error/);
+    assert.equal(response.body.includes('private provider failure detail'), false);
+
+    const saved = db.prepare(
+      'SELECT role,content,status FROM messages WHERE conversation_id=? ORDER BY id',
+    ).all(conversationId);
+    assert.deepEqual(saved, [
+      { role: 'user', content: 'original first question', status: 'complete' },
+      { role: 'assistant', content: 'original first answer', status: 'complete' },
+      { role: 'user', content: 'original later question', status: 'complete' },
+      { role: 'assistant', content: 'original later answer', status: 'complete' },
+    ]);
+  } finally {
+    config.aiBaseUrl = previous.aiBaseUrl;
+    config.aiApiKey = previous.aiApiKey;
+    config.aiModel = previous.aiModel;
+    await new Promise((resolve) => providerServer.close(resolve));
+    providerServer = null;
+  }
+});
+
+
+test('editing a user message replaces that turn and deletes later conversation history', async () => {
+  providerServer = createServer((incoming, outgoing) => {
+    let body = '';
+    incoming.setEncoding('utf8');
+    incoming.on('data', (chunk) => { body += chunk; });
+    incoming.on('end', () => {
+      providerRequest = JSON.parse(body);
+      outgoing.writeHead(200, { 'Content-Type': 'application/json' });
+      outgoing.end(JSON.stringify({ choices: [{ message: { content: 'Rewritten assistant message' } }] }));
+    });
+  });
+  await new Promise((resolve) => providerServer.listen(0, '127.0.0.1', resolve));
+
+  const previous = {
+    aiBaseUrl: config.aiBaseUrl,
+    aiApiKey: config.aiApiKey,
+    aiModel: config.aiModel,
+  };
+  config.aiBaseUrl = 'http://127.0.0.1:' + providerServer.address().port + '/v1';
+  config.aiApiKey = 'edit-test-secret';
+  config.aiModel = 'mock-edit-model';
+
+  try {
+    const owner = request.agent(app);
+    await owner.post('/api/v1/auth/register').set(originHeaders).send({
+      email: 'message-edit@example.com',
+      name: 'Message Edit Tester',
+      password: 'message-edit-password-strong',
+    }).expect(201);
+
+    const created = await owner.post('/api/v1/conversations').set(originHeaders)
+      .send({ title: 'Message editing' }).expect(201);
+    const conversationId = created.body.conversation.id;
+    const insert = db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)');
+    insert.run(conversationId, 'user', 'first question');
+    insert.run(conversationId, 'assistant', 'first answer');
+    const target = insert.run(conversationId, 'user', 'old follow-up');
+    insert.run(conversationId, 'assistant', 'old response');
+    insert.run(conversationId, 'user', 'later follow-up');
+    insert.run(conversationId, 'assistant', 'later response');
+
+    const other = request.agent(app);
+    await other.post('/api/v1/auth/register').set(originHeaders).send({
+      email: 'message-edit-other@example.com',
+      name: 'Other User',
+      password: 'message-edit-other-password',
+    }).expect(201);
+    await other.put('/api/v1/conversations/' + conversationId + '/messages/' + target.lastInsertRowid + '/stream')
+      .set(originHeaders).send({ content: 'unauthorized edit' }).expect(404);
+
+    const response = await owner.put(
+      '/api/v1/conversations/' + conversationId + '/messages/' + target.lastInsertRowid + '/stream',
+    ).set(originHeaders).send({ content: 'edited follow-up' })
+      .buffer(true)
+      .parse((incoming, callback) => {
+        let result = '';
+        incoming.setEncoding('utf8');
+        incoming.on('data', (chunk) => { result += chunk; });
+        incoming.on('end', () => callback(null, result));
+        incoming.on('error', callback);
+      }).expect(200);
+
+    assert.match(response.body, /event: message_start/);
+    assert.match(response.body, /event: message_delta/);
+    assert.match(response.body, /event: message_complete/);
+    assert.match(response.body, /Rewritten assistant message/);
+    assert.equal(providerRequest.stream, true);
+    assert.deepEqual(
+      providerRequest.messages.map((message) => [message.role, message.content]),
+      [['user', 'first question'], ['assistant', 'first answer'], ['user', 'edited follow-up']],
+    );
+
+    const saved = db.prepare(
+      'SELECT role,content,status FROM messages WHERE conversation_id=? ORDER BY id',
+    ).all(conversationId);
+    assert.deepEqual(saved, [
+      { role: 'user', content: 'first question', status: 'complete' },
+      { role: 'assistant', content: 'first answer', status: 'complete' },
+      { role: 'user', content: 'edited follow-up', status: 'complete' },
+      { role: 'assistant', content: 'Rewritten assistant message', status: 'complete' },
+    ]);
+  } finally {
+    config.aiBaseUrl = previous.aiBaseUrl;
+    config.aiApiKey = previous.aiApiKey;
+    config.aiModel = previous.aiModel;
+    await new Promise((resolve) => providerServer.close(resolve));
+    providerServer = null;
+  }
+});

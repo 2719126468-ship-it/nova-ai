@@ -42,17 +42,22 @@ function sendSse(res, event, payload) {
   res.write('data: ' + JSON.stringify(payload) + '\n\n');
 }
 
-function readRecentHistory(conversationId) {
-  return db.prepare(
-    "SELECT role,content FROM messages WHERE conversation_id=? AND status='complete' ORDER BY id DESC LIMIT 30",
-  ).all(conversationId).reverse();
+function readRecentHistory(conversationId, beforeMessageId = null) {
+  const rows = beforeMessageId
+    ? db.prepare(
+      "SELECT role,content FROM messages WHERE conversation_id=? AND status='complete' AND id<? ORDER BY id DESC LIMIT 30",
+    ).all(conversationId, beforeMessageId)
+    : db.prepare(
+      "SELECT role,content FROM messages WHERE conversation_id=? AND status='complete' ORDER BY id DESC LIMIT 30",
+    ).all(conversationId);
+  return rows.reverse();
 }
 
-function buildPrompt(conversationId, currentContent) {
+function buildPrompt(conversationId, currentContent, beforeMessageId = null) {
   const budget = config.aiMaxContextChars;
   if (currentContent.length > budget) return null;
 
-  const history = readRecentHistory(conversationId);
+  const history = readRecentHistory(conversationId, beforeMessageId);
   // A failed or cancelled turn can leave its user message complete while the
   // assistant message is failed. Do not replay that unmatched user message.
   while (history.length && history.at(-1).role === 'user') history.pop();
@@ -70,6 +75,80 @@ function buildPrompt(conversationId, currentContent) {
   // Do not begin the prompt with an assistant message whose user turn was clipped.
   while (selected.length && selected[0].role === 'assistant') selected.shift();
   return [...selected, { role: 'user', content: currentContent }];
+}
+
+
+async function streamAssistantResponse(res, prompt, pending, generationKey, hooks = {}) {
+  const controller = new AbortController();
+  let clientDisconnected = false;
+  let partialContent = '';
+  const onClose = () => {
+    if (!res.writableEnded) {
+      clientDisconnected = true;
+      controller.abort();
+    }
+  };
+  res.once('close', onClose);
+
+  res.status(200);
+  res.set({
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.flushHeaders();
+  sendSse(res, 'message_start', {
+    userMessage: pending.userMessage,
+    assistantMessageId: pending.assistantMessageId,
+    modelId: config.aiModel,
+  });
+
+  try {
+    const content = await streamAssistantReply(prompt, {
+      signal: controller.signal,
+      onDelta(delta) {
+        partialContent += delta;
+        sendSse(res, 'message_delta', {
+          messageId: pending.assistantMessageId,
+          delta,
+        });
+      },
+    });
+
+    let assistantMessage;
+    if (typeof hooks.onSuccess === 'function') {
+      assistantMessage = hooks.onSuccess(content);
+    } else {
+      db.prepare("UPDATE messages SET content=?,status='complete',error_code=NULL WHERE id=?")
+        .run(content, pending.assistantMessageId);
+      assistantMessage = db.prepare(
+        'SELECT id,role,content,status,error_code,created_at FROM messages WHERE id=?',
+      ).get(pending.assistantMessageId);
+    }
+    sendSse(res, 'message_complete', { assistantMessage });
+    if (!res.writableEnded && !res.destroyed) res.end();
+  } catch (error) {
+    const cancelled = clientDisconnected || error?.code === 'AI_REQUEST_CANCELLED';
+    if (typeof hooks.onFailure === 'function') {
+      hooks.onFailure(error, { partialContent, cancelled });
+    } else {
+      db.prepare('UPDATE messages SET content=?,status=?,error_code=? WHERE id=?')
+        .run(partialContent, cancelled ? 'cancelled' : 'failed', cancelled ? 'AI_REQUEST_CANCELLED' : (error?.code || 'AI_PROVIDER_ERROR'), pending.assistantMessageId);
+    }
+
+    if (!clientDisconnected && !res.writableEnded && !res.destroyed) {
+      sendSse(res, cancelled ? 'message_cancelled' : 'message_error', {
+        messageId: pending.assistantMessageId,
+        code: cancelled ? 'AI_REQUEST_CANCELLED' : (error?.code || 'AI_PROVIDER_ERROR'),
+        message: cancelled ? '生成已取消。' : (error?.message || '模型生成失败，请重试。'),
+      });
+      res.end();
+    }
+  } finally {
+    activeGenerations.delete(generationKey);
+    res.removeListener('close', onClose);
+  }
 }
 
 router.get('/', (req, res) => {
@@ -211,67 +290,110 @@ router.post('/:id/messages/stream', generationLimiter, async (req, res, next) =>
     return next(error);
   }
 
-  const controller = new AbortController();
-  let clientDisconnected = false;
-  let partialContent = '';
-  const onClose = () => {
-    if (!res.writableEnded) {
-      clientDisconnected = true;
-      controller.abort();
-    }
-  };
-  res.once('close', onClose);
+  return streamAssistantResponse(res, prompt, pending, generationKey);
+});
 
-  res.status(200);
-  res.set({
-    'Content-Type': 'text/event-stream; charset=utf-8',
-    'Cache-Control': 'no-cache, no-transform',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
-  res.flushHeaders();
-  sendSse(res, 'message_start', {
-    userMessage: pending.userMessage,
-    assistantMessageId: pending.assistantMessageId,
-    modelId: config.aiModel,
-  });
+router.put('/:id/messages/:messageId/stream', generationLimiter, async (req, res, next) => {
+  if (!isPositiveId(req.params.id) || !isPositiveId(req.params.messageId)) {
+    return res.status(400).json({ error: 'INVALID_ID', message: '对话或消息编号无效。' });
+  }
+  const parsed = streamMessageSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'VALIDATION_ERROR', message: '消息不能为空，且不能超过 20,000 个字符。' });
+  }
 
-  try {
-    const content = await streamAssistantReply(prompt, {
-      signal: controller.signal,
-      onDelta(delta) {
-        partialContent += delta;
-        sendSse(res, 'message_delta', {
-          messageId: pending.assistantMessageId,
-          delta,
-        });
+  const conversationId = Number(req.params.id);
+  const messageId = Number(req.params.messageId);
+  const conversation = findConversation(conversationId, req.user.id);
+  if (!conversation) return res.status(404).json({ error: 'NOT_FOUND', message: '对话不存在。' });
+
+  const target = db.prepare(
+    "SELECT id,role,content,status,created_at FROM messages WHERE id=? AND conversation_id=? AND role='user'",
+  ).get(messageId, conversationId);
+  if (!target || target.status !== 'complete') {
+    return res.status(404).json({ error: 'MESSAGE_NOT_FOUND', message: '可编辑的用户消息不存在。' });
+  }
+  if (!config.aiConfigured) return next(new ProviderNotConfiguredError());
+  if (parsed.data.modelId && parsed.data.modelId !== config.aiModel) {
+    return res.status(404).json({ error: 'MODEL_NOT_FOUND', message: '所选模型未在服务端启用。' });
+  }
+
+  const generationKey = String(req.user.id);
+  if (activeGenerations.has(generationKey)) {
+    return res.status(409).json({ error: 'AI_GENERATION_IN_PROGRESS', message: '当前账号已有生成任务，请等待完成或停止后重试。' });
+  }
+  activeGenerations.add(generationKey);
+
+  const prompt = buildPrompt(conversationId, parsed.data.content, messageId);
+  if (!prompt) {
+    activeGenerations.delete(generationKey);
+    return res.status(413).json({ error: 'AI_INPUT_TOO_LARGE', message: '当前消息超过服务端配置的字符预算，请缩短后重试。' });
+  }
+
+  const createPending = db.transaction(() => {
+    const assistantResult = db.prepare(
+      "INSERT INTO messages(conversation_id,role,content,status) VALUES(?,?,?,?)",
+    ).run(conversationId, 'assistant', '', 'streaming');
+    return {
+      userMessage: {
+        id: target.id,
+        role: 'user',
+        content: parsed.data.content,
+        status: 'complete',
+        error_code: null,
+        created_at: target.created_at,
       },
-    });
+      assistantMessageId: assistantResult.lastInsertRowid,
+    };
+  });
 
-    db.prepare("UPDATE messages SET content=?,status='complete',error_code=NULL WHERE id=?")
-      .run(content, pending.assistantMessageId);
-    const assistantMessage = db.prepare(
+  let pending;
+  try {
+    pending = createPending();
+  } catch (error) {
+    activeGenerations.delete(generationKey);
+    return next(error);
+  }
+
+  const commitEdit = db.transaction((assistantContent) => {
+    const updated = db.prepare(
+      "UPDATE messages SET content=?,status='complete',error_code=NULL WHERE id=? AND conversation_id=? AND role='user'",
+    ).run(parsed.data.content, messageId, conversationId);
+    if (!updated.changes) {
+      const error = new Error('可编辑的用户消息已不存在。');
+      error.code = 'MESSAGE_NOT_FOUND';
+      error.status = 404;
+      throw error;
+    }
+
+    db.prepare('DELETE FROM messages WHERE conversation_id=? AND id>? AND id<>?')
+      .run(conversationId, messageId, pending.assistantMessageId);
+
+    const firstUser = db.prepare(
+      "SELECT id FROM messages WHERE conversation_id=? AND role='user' ORDER BY id LIMIT 1",
+    ).get(conversationId);
+    const nextTitle = firstUser?.id === messageId && conversation.title === target.content.slice(0, 42)
+      ? parsed.data.content.slice(0, 42)
+      : conversation.title;
+    db.prepare('UPDATE conversations SET title=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
+      .run(nextTitle, conversationId);
+
+    db.prepare("UPDATE messages SET content=?,status='complete',error_code=NULL WHERE id=? AND conversation_id=?")
+      .run(assistantContent, pending.assistantMessageId, conversationId);
+    return db.prepare(
       'SELECT id,role,content,status,error_code,created_at FROM messages WHERE id=?',
     ).get(pending.assistantMessageId);
-    sendSse(res, 'message_complete', { assistantMessage });
-    if (!res.writableEnded && !res.destroyed) res.end();
-  } catch (error) {
-    const cancelled = clientDisconnected || error?.code === 'AI_REQUEST_CANCELLED';
-    db.prepare('UPDATE messages SET content=?,status=?,error_code=? WHERE id=?')
-      .run(partialContent, cancelled ? 'cancelled' : 'failed', cancelled ? 'AI_REQUEST_CANCELLED' : (error?.code || 'AI_PROVIDER_ERROR'), pending.assistantMessageId);
+  });
 
-    if (!clientDisconnected && !res.writableEnded && !res.destroyed) {
-      sendSse(res, cancelled ? 'message_cancelled' : 'message_error', {
-        messageId: pending.assistantMessageId,
-        code: cancelled ? 'AI_REQUEST_CANCELLED' : (error?.code || 'AI_PROVIDER_ERROR'),
-        message: cancelled ? '生成已取消。' : (error?.message || '模型生成失败，请重试。'),
-      });
-      res.end();
-    }
-  } finally {
-    activeGenerations.delete(generationKey);
-    res.removeListener('close', onClose);
-  }
+  const discardPending = () => {
+    db.prepare('DELETE FROM messages WHERE id=? AND conversation_id=?')
+      .run(pending.assistantMessageId, conversationId);
+  };
+
+  return streamAssistantResponse(res, prompt, pending, generationKey, {
+    onSuccess: commitEdit,
+    onFailure: discardPending,
+  });
 });
 
 router.delete('/:id', (req, res) => {

@@ -54,6 +54,7 @@ All endpoints below require an authenticated session.
 | PATCH | /api/v1/conversations/:id | Rename a conversation |
 | DELETE | /api/v1/conversations/:id | Delete a conversation and its messages |
 | POST | /api/v1/conversations/:id/messages/stream | Send a message and stream the assistant response |
+| PUT | /api/v1/conversations/:id/messages/:messageId/stream | Edit a previous user message and stream its replacement response |
 
 The conversation owner is checked on every operation. A user cannot read, rename, send messages to, or delete another user's conversation.
 
@@ -74,6 +75,14 @@ X-Requested-With: NOVA-Web
 ```
 
 modelId is optional. When supplied, it must match the model enabled by the server configuration. A request made before the provider is configured returns a normal JSON 503 AI_PROVIDER_NOT_CONFIGURED response before the stream starts.
+
+### Editing and regenerating a turn
+
+Use `PUT /api/v1/conversations/:id/messages/:messageId/stream` with the same JSON body and SSE events as the normal streaming endpoint. The target must be a completed user message in a conversation owned by the authenticated user.
+
+Editing a user message changes the conversation branch from that point onward. On successful generation, NOVA atomically updates the selected user message, deletes all later messages, and saves the replacement assistant response. This prevents later answers from remaining attached to a prompt that no longer exists.
+
+The original conversation remains intact while the replacement is being generated. If generation fails or is cancelled, the pending response is discarded and the old conversation branch is preserved, so the user can retry. The Chat UI only offers one-click Regenerate on the latest completed assistant message; editing an earlier user message displays a warning that later turns are removed only after successful regeneration.
 
 ### SSE events
 
@@ -136,4 +145,4 @@ Provider error messages are normalized rather than returning raw upstream respon
 - The server does not yet perform active model health checks.
 - Context considers up to 30 completed messages and trims older turns to the configured character budget; provider-specific token counting and context-window limits remain pending.
 - Usage metering and provider token/quota accounting, tools, attachments, and provider failover are not implemented. Per-user request throttling and one-active-generation controls are implemented with a process-local store.
-- The old non-streaming JSON message endpoint remains available for compatibility; the Chat UI uses the streaming endpoint.
+- The old non-streaming JSON message endpoint remains available for compatibility; the Chat UI uses the streaming endpoint. User-message edits and assistant regeneration use the versioned PUT streaming endpoint and commit the replacement branch only after success.

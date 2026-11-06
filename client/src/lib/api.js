@@ -33,7 +33,7 @@ export async function* apiStream(path, options = {}) {
   headers.set('X-Requested-With', 'NOVA-Web');
   const response = await fetch(API_URL + path, {
     ...options,
-    method: 'POST',
+    method: (options.method || 'POST').toUpperCase(),
     headers,
     credentials: 'include',
   });
