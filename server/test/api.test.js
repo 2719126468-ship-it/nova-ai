@@ -900,6 +900,8 @@ test('failed edit regeneration preserves the original conversation branch', asyn
       { role: 'user', content: 'original later question', status: 'complete' },
       { role: 'assistant', content: 'original later answer', status: 'complete' },
     ]);
+    const usage = db.prepare("SELECT operation,status,error_code FROM ai_usage WHERE user_id=(SELECT id FROM users WHERE email=?) ORDER BY id DESC LIMIT 1").get('message-edit-failure@example.com');
+    assert.deepEqual(usage, { operation: 'edit', status: 'failed', error_code: 'AI_PROVIDER_UNAVAILABLE' });
   } finally {
     config.aiBaseUrl = previous.aiBaseUrl;
     config.aiApiKey = previous.aiApiKey;
@@ -991,6 +993,8 @@ test('editing a user message replaces that turn and deletes later conversation h
       { role: 'user', content: 'edited follow-up', status: 'complete' },
       { role: 'assistant', content: 'Rewritten assistant message', status: 'complete' },
     ]);
+    const usage = db.prepare("SELECT operation,status,error_code FROM ai_usage WHERE user_id=(SELECT id FROM users WHERE email=?) ORDER BY id DESC LIMIT 1").get('message-edit@example.com');
+    assert.deepEqual(usage, { operation: 'edit', status: 'succeeded', error_code: null });
   } finally {
     config.aiBaseUrl = previous.aiBaseUrl;
     config.aiApiKey = previous.aiApiKey;
@@ -1061,6 +1065,8 @@ test('retrying a failed assistant message replaces it only after a successful re
       { role: 'user', content: 'original question', status: 'complete', error_code: null },
       { role: 'assistant', content: 'Recovered assistant response', status: 'complete', error_code: null },
     ]);
+    const usage = db.prepare("SELECT operation,status,error_code FROM ai_usage WHERE user_id=(SELECT id FROM users WHERE email=?) ORDER BY id DESC LIMIT 1").get('message-retry@example.com');
+    assert.deepEqual(usage, { operation: 'retry', status: 'succeeded', error_code: null });
   } finally {
     config.aiBaseUrl = previous.aiBaseUrl;
     config.aiApiKey = previous.aiApiKey;
@@ -1123,6 +1129,8 @@ test('failed assistant retry preserves the previous failed response', async () =
       { role: 'user', content: 'question to retry', status: 'complete', error_code: null },
       { role: 'assistant', content: 'keep this failed response', status: 'failed', error_code: 'AI_TIMEOUT' },
     ]);
+    const usage = db.prepare("SELECT operation,status,error_code FROM ai_usage WHERE user_id=(SELECT id FROM users WHERE email=?) ORDER BY id DESC LIMIT 1").get('message-retry-failure@example.com');
+    assert.deepEqual(usage, { operation: 'retry', status: 'failed', error_code: 'AI_PROVIDER_UNAVAILABLE' });
   } finally {
     config.aiBaseUrl = previous.aiBaseUrl;
     config.aiApiKey = previous.aiApiKey;
