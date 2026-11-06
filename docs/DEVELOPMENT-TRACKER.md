@@ -7,7 +7,7 @@
 
 ## Progress
 
-**7 / 12 complete** · 1 in progress · 4 planned
+**8 / 12 complete** · 1 in progress · 3 planned
 
 The existing V0.1 implementation is the foundation. Do not rebuild or replace working authentication, chat, SSE, model routing, Studio, account, or data-lifecycle flows. Extend them incrementally.
 
@@ -41,8 +41,8 @@ Remaining model-system follow-ups: automatic model discovery, controlled failove
 
 | ID | Priority | Task | Status | Completion criteria |
 |---|---|---|---|---|
-| B3-01 | P0 | Documents data model and API | **In progress** | Add owned documents with project association, create/read/update/delete endpoints, validation, migrations, and cross-account tests. |
-| B3-02 | P0 | Documents editor and autosave | Planned | Create/edit Markdown documents, autosave safely, show save/error state, and export content. |
+| B3-01 | P0 | Documents data model and API | **Complete** | Migration v7 adds user-owned Markdown documents with project association, ownership triggers, bounded content and versions; authenticated CRUD/list/search API, optimistic concurrency, account export/deletion lifecycle and regression tests; PR #11 CI run #71 passed API tests and production build; merged as 4866e8e. |
+| B3-02 | P0 | Documents editor and autosave | **In progress** | Create/edit Markdown documents, autosave safely, show save/error state, and export content. |
 | B3-03 | P1 | Project context and file management | Planned | Add project instructions and organized project materials; implement upload only with file type/signature, size, isolation, retention, and parsing controls. |
 | B3-04 | P1 | Real Research search and citations | Planned | Use a real search provider, preserve source URLs/metadata, distinguish retrieved facts from model synthesis, and produce cited reports. |
 
@@ -99,6 +99,13 @@ Documents comes before project context/file management, and Research follows tho
 - Updates require `expectedVersion` and return 409 on stale writes, providing the concurrency contract needed by the upcoming autosave editor.
 - Deleting a project detaches its documents rather than deleting them; account deletion cascades documents. Account export schema v5 now contains complete document content.
 - Added integration coverage for CRUD, search/pagination, project ownership, stale version conflicts, project deletion, account export, and account deletion. B3-01 remains in progress until CI passes.
+
+## 2026-11-07 — B3-01 completed; B3-02 started
+
+- PR #11 merged as `4866e8eb4184b18f209535a9fa6b31436afb1619`; CI run #71 passed the API test suite and frontend production build.
+- Migration v7 adds private Markdown documents with owner/project constraints, version numbers, and indexes. API list/create/read/update/delete is owner-scoped; stale updates return 409 and require the caller's expected version.
+- Project deletion detaches documents rather than deleting them; account deletion cascades documents; account export schema v5 includes full document content.
+- B3-02 is now in progress: build the mobile-first Documents list/editor and reliable autosave over the versioned API. Preserve unsaved local text on conflicts and expose actionable save state.
 
 ## Completed work log
 
