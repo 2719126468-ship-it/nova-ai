@@ -202,12 +202,6 @@ router.post('/:id/files', express.raw({ type: 'application/octet-stream', limit:
         createdAt: file.created_at,
       },
     });
-  } catch (error) {
-    if (String(error.code || '').includes('CONSTRAINT_UNIQUE')) {
-      return res.status(409).json({ error: 'DUPLICATE_PROJECT_FILE', message: '该文件内容已经存在于此项目。' });
-    }
-    throw error;
-  }
 });
 
 router.patch('/:id/files/:fileId', (req, res) => {
