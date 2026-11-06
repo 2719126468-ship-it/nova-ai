@@ -765,7 +765,9 @@ test('model context budget keeps the newest complete turn and preserves current 
     assert.match(response.body, /"modelContextWindowSource":"environment_configured"/);
     assert.match(response.body, /"tokenEstimateSource":"tokenizer_estimate"/);
     assert.match(response.body, /"historyTruncated":true/);
-    assert.match(response.body, /"currentMessagePreserved":true,"outputReserveTokens":128,"outputLimitEnforced":true/);
+    assert.match(response.body, /"currentMessagePreserved":true/);
+    assert.match(response.body, /"outputReserveTokens":128/);
+    assert.match(response.body, /"outputLimitEnforced":true/);
     assert.equal(providerRequest.max_completion_tokens, 128);
     assert.equal(Object.hasOwn(providerRequest, 'max_tokens'), false);
     assert.equal(Object.hasOwn(providerRequest, 'temperature'), false);
