@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { db } from '../db.js';
 import { config } from '../config.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
-import { encryptProviderSecret } from '../services/provider-secrets.js';
+import { decryptProviderSecret, encryptProviderSecret } from '../services/provider-secrets.js';
 import { getModelRegistry } from '../services/model-registry.js';
 
 const providerIdSchema = z.string().trim().regex(/^[a-zA-Z0-9_-]{1,64}$/);
@@ -218,7 +218,7 @@ router.post('/providers', (req, res, next) => {
     db.prepare(`
       INSERT INTO ai_providers(id,name,protocol,base_url,api_key_encrypted,enabled,models_json)
       VALUES(?,?,'openai-compatible',?,?,?,?)
-    `).run(input.id, input.name, input.baseUrl.replace(/\\/+$/, ''), secret, input.enabled ? 1 : 0, JSON.stringify(models));
+    `).run(input.id, input.name, input.baseUrl.replace(/\/+$/, ''), secret, input.enabled ? 1 : 0, JSON.stringify(models));
 
     res.status(201).json(providerManagementState());
   } catch (error) {
@@ -241,6 +241,7 @@ router.put('/providers/:id', (req, res, next) => {
     const current = db.prepare('SELECT * FROM ai_providers WHERE id=?').get(id.data);
     if (!current) return res.status(404).json({ error: 'PROVIDER_NOT_FOUND', message: '找不到可管理的 Provider。' });
     const input = parsed.data;
+    if (typeof input.apiKey !== 'string' || !input.apiKey.trim()) decryptProviderSecret(current.api_key_encrypted);
     const apiKeyEncrypted = typeof input.apiKey === 'string' && input.apiKey.trim()
       ? encryptProviderSecret(input.apiKey)
       : current.api_key_encrypted;
@@ -251,7 +252,7 @@ router.put('/providers/:id', (req, res, next) => {
       WHERE id=?
     `).run(
       input.name ?? current.name,
-      input.baseUrl ? input.baseUrl.replace(/\\/+$/, '') : current.base_url,
+      input.baseUrl ? input.baseUrl.replace(/\/+$/, '') : current.base_url,
       apiKeyEncrypted,
       input.enabled === undefined ? current.enabled : (input.enabled ? 1 : 0),
       JSON.stringify(models),
