@@ -18,6 +18,7 @@ function getModelCatalog() {
       defaultModelId: null,
       provider: { id: 'openai-compatible', name: 'OpenAI-compatible provider', configured: false, health: 'unknown', status: 'not_configured' },
       models: [],
+      contextPolicy: { unit: 'characters', maxMessageContentCharacters: config.aiMaxContextChars, tokenLimit: null },
       note: '尚未配置模型服务。模型密钥只从服务端环境变量读取。',
     };
   }
@@ -38,6 +39,7 @@ function getModelCatalog() {
       capabilities: ['chat', 'text'],
       contextLimit: null,
     }],
+    contextPolicy: { unit: 'characters', maxMessageContentCharacters: config.aiMaxContextChars, tokenLimit: null },
     note: '配置完整不代表上游服务已连通；当前尚未执行主动健康检查。',
   };
 }

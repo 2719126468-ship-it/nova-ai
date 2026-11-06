@@ -48,6 +48,30 @@ function readRecentHistory(conversationId) {
   ).all(conversationId).reverse();
 }
 
+function buildPrompt(conversationId, currentContent) {
+  const budget = config.aiMaxContextChars;
+  if (currentContent.length > budget) return null;
+
+  const history = readRecentHistory(conversationId);
+  // A failed or cancelled turn can leave its user message complete while the
+  // assistant message is failed. Do not replay that unmatched user message.
+  while (history.length && history.at(-1).role === 'user') history.pop();
+
+  const selected = [];
+  let usedCharacters = currentContent.length;
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const message = history[index];
+    if (usedCharacters + message.content.length > budget) break;
+    selected.push(message);
+    usedCharacters += message.content.length;
+  }
+
+  selected.reverse();
+  // Do not begin the prompt with an assistant message whose user turn was clipped.
+  while (selected.length && selected[0].role === 'assistant') selected.shift();
+  return [...selected, { role: 'user', content: currentContent }];
+}
+
 router.get('/', (req, res) => {
   const conversations = db.prepare(`
     SELECT c.id,c.title,c.created_at,c.updated_at,
@@ -115,7 +139,8 @@ router.post('/:id/messages', generationLimiter, async (req, res, next) => {
     activeGenerations.add(generationKey);
 
     try {
-      const prompt = [...readRecentHistory(conversationId), { role: 'user', content: parsed.data.content }];
+      const prompt = buildPrompt(conversationId, parsed.data.content);
+      if (!prompt) return res.status(413).json({ error: 'AI_INPUT_TOO_LARGE', message: '当前消息超过服务端配置的字符预算，请缩短后重试。' });
       const reply = await createAssistantReply(prompt);
       const insert = db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)');
       const save = db.transaction(() => {
@@ -161,7 +186,11 @@ router.post('/:id/messages/stream', generationLimiter, async (req, res, next) =>
   }
   activeGenerations.add(generationKey);
 
-  const prompt = [...readRecentHistory(conversationId), { role: 'user', content: parsed.data.content }];
+  const prompt = buildPrompt(conversationId, parsed.data.content);
+  if (!prompt) {
+    activeGenerations.delete(generationKey);
+    return res.status(413).json({ error: 'AI_INPUT_TOO_LARGE', message: '当前消息超过服务端配置的字符预算，请缩短后重试。' });
+  }
   const insert = db.prepare('INSERT INTO messages(conversation_id,role,content,status) VALUES(?,?,?,?)');
   const createPendingMessages = db.transaction(() => {
     const userResult = insert.run(conversationId, 'user', parsed.data.content, 'complete');

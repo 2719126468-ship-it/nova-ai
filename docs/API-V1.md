@@ -38,6 +38,10 @@ A configured model has this shape:
 
 status: unknown means that the model is configured but has not been actively verified. Do not present this state as connected, healthy, or available. The initial release exposes one environment-configured model; it does not yet provide a multi-provider registry or live health probes.
 
+## Context budget
+
+The server applies a configurable character budget to message content before sending a prompt upstream. Configure it with `AI_MAX_CONTEXT_CHARS` (default `40000`, allowed range `512`–`200000`). This is a JavaScript string-length budget, **not a token count**. The API reports `contextPolicy.tokenLimit: null` because provider/model token windows are not currently verified. NOVA keeps the newest complete turns that fit and always preserves the current user message. A failed/cancelled turn's unmatched trailing user message is not replayed as conversation history. If the current message alone exceeds the configured budget, the API returns HTTP 413 `AI_INPUT_TOO_LARGE` before calling the provider.
+
 ## Conversations
 
 All endpoints below require an authenticated session.
@@ -114,6 +118,9 @@ Clients should use AbortController to cancel the streaming fetch when the user p
 | AI_TIMEOUT | 504 | Upstream request exceeded the configured timeout |
 | AI_EMPTY_RESPONSE | 502 | Provider completed without usable text |
 | AI_INVALID_STREAM | 502 | Provider returned malformed SSE data |
+| AI_INPUT_TOO_LARGE | 413 | Current message exceeds the configured character budget |
+| AI_RATE_LIMITED | 429 | Authenticated user's generation frequency limit was reached |
+| AI_GENERATION_IN_PROGRESS | 409 | Another generation is already active for this user |
 
 Provider error messages are normalized rather than returning raw upstream response bodies. API credentials remain server-side.
 
@@ -127,6 +134,6 @@ Provider error messages are normalized rather than returning raw upstream respon
 
 - One OpenAI-compatible provider and one configured model are supported.
 - The server does not yet perform active model health checks.
-- Context includes up to 30 completed messages; token-budget-aware truncation is still pending.
-- Usage metering, per-user AI quotas, concurrent generation limits, tools, attachments, and provider failover are not implemented.
-- The old non-streaming JSON message endpoint remains available for compatibility; the Chat UI is being migrated to the streaming endpoint.
+- Context considers up to 30 completed messages and trims older turns to the configured character budget; provider-specific token counting and context-window limits remain pending.
+- Usage metering and provider token/quota accounting, tools, attachments, and provider failover are not implemented. Per-user request throttling and one-active-generation controls are implemented with a process-local store.
+- The old non-streaming JSON message endpoint remains available for compatibility; the Chat UI uses the streaming endpoint.

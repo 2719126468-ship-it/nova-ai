@@ -108,6 +108,7 @@ test('versioned models endpoint does not claim an unconfigured model is connecte
   const response = await request(app).get('/api/v1/models').expect(200);
   assert.equal(response.body.configured, false);
   assert.deepEqual(response.body.models, []);
+  assert.deepEqual(response.body.contextPolicy, { unit: 'characters', maxMessageContentCharacters: 40000, tokenLimit: null });
 });
 
 test('users can rename conversations through the versioned API', async () => {
@@ -539,6 +540,83 @@ test('provider timeout is classified and saved as a failed message', async () =>
     config.aiApiKey = previous.aiApiKey;
     config.aiModel = previous.aiModel;
     config.aiTimeoutMs = previous.aiTimeoutMs;
+    await new Promise((resolve) => providerServer.close(resolve));
+    providerServer = null;
+  }
+});
+
+
+test('context character budget keeps the newest complete turn and preserves current input', async () => {
+  providerServer = createServer((incoming, outgoing) => {
+    let body = '';
+    incoming.setEncoding('utf8');
+    incoming.on('data', (chunk) => { body += chunk; });
+    incoming.on('end', () => {
+      providerRequest = JSON.parse(body);
+      outgoing.writeHead(200, { 'Content-Type': 'application/json' });
+      outgoing.end(JSON.stringify({ choices: [{ message: { content: 'Context window response' } }] }));
+    });
+  });
+  await new Promise((resolve) => providerServer.listen(0, '127.0.0.1', resolve));
+  const previous = {
+    aiBaseUrl: config.aiBaseUrl,
+    aiApiKey: config.aiApiKey,
+    aiModel: config.aiModel,
+    aiMaxContextChars: config.aiMaxContextChars,
+  };
+  config.aiBaseUrl = 'http://127.0.0.1:' + providerServer.address().port + '/v1';
+  config.aiApiKey = 'context-test-secret';
+  config.aiModel = 'mock-context-model';
+  config.aiMaxContextChars = 30;
+
+  try {
+    const agent = request.agent(app);
+    await agent.post('/api/v1/auth/register').set(originHeaders).send({
+      email: 'context-budget@example.com',
+      name: 'Context Budget Tester',
+      password: 'context-budget-password-strong',
+    }).expect(201);
+    const created = await agent.post('/api/v1/conversations').set(originHeaders)
+      .send({ title: 'Context budget' }).expect(201);
+    const id = created.body.conversation.id;
+    const insert = db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)');
+    insert.run(id, 'user', 'old-user');
+    insert.run(id, 'assistant', 'old-answer');
+    insert.run(id, 'user', 'recent-user');
+    insert.run(id, 'assistant', 'recent-answer');
+    // Simulate a user turn whose assistant generation previously failed.
+    insert.run(id, 'user', 'abandoned-user');
+
+    const response = await agent.post('/api/v1/conversations/' + id + '/messages/stream')
+      .set(originHeaders).send({ content: 'now' })
+      .buffer(true)
+      .parse((incoming, callback) => {
+        let result = '';
+        incoming.setEncoding('utf8');
+        incoming.on('data', (chunk) => { result += chunk; });
+        incoming.on('end', () => callback(null, result));
+        incoming.on('error', callback);
+      }).expect(200);
+    assert.match(response.body, /event: message_complete/);
+    assert.match(response.body, /Context window response/);
+    assert.deepEqual(
+      providerRequest.messages.map((message) => [message.role, message.content]),
+      [['user', 'recent-user'], ['assistant', 'recent-answer'], ['user', 'now']],
+    );
+
+    config.aiMaxContextChars = 2;
+    const tooLarge = await agent.post('/api/v1/conversations/' + id + '/messages/stream')
+      .set(originHeaders).send({ content: 'too long' }).expect(413);
+    assert.equal(tooLarge.body.error, 'AI_INPUT_TOO_LARGE');
+    const savedOversized = db.prepare(
+      "SELECT COUNT(*) AS count FROM messages WHERE conversation_id=? AND role='user' AND content='too long'",
+    ).get(id);
+    assert.equal(savedOversized.count, 0);
+  } finally {
+    config.aiBaseUrl = previous.aiBaseUrl;
+    config.aiApiKey = previous.aiApiKey;
+    config.aiModel = previous.aiModel;
+    config.aiMaxContextChars = previous.aiMaxContextChars;
     await new Promise((resolve) => providerServer.close(resolve));
     providerServer = null;
   }

@@ -14,6 +14,7 @@ export const config = {
   aiApiKey: process.env.AI_API_KEY || '',
   aiModel: process.env.AI_MODEL || '',
   aiTimeoutMs: Number(process.env.AI_TIMEOUT_MS || 60000),
+  aiMaxContextChars: Number(process.env.AI_MAX_CONTEXT_CHARS || 40000),
   sessionDays: 7,
   get aiConfigured() { return Boolean(this.aiBaseUrl && this.aiApiKey && this.aiModel); },
 };
@@ -24,5 +25,8 @@ export function assertConfig() {
   }
   if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) {
     throw new Error('PORT must be a valid TCP port.');
+  }
+  if (!Number.isInteger(config.aiMaxContextChars) || config.aiMaxContextChars < 512 || config.aiMaxContextChars > 200000) {
+    throw new Error('AI_MAX_CONTEXT_CHARS must be an integer between 512 and 200000.');
   }
 }
