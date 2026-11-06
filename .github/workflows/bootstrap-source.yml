@@ -20,7 +20,7 @@ jobs:
       - name: Extract application source
         run: |
           mkdir -p /tmp/nova-ai-source
-          cat .nova-ai-upload/part-* | base64 --decode > /tmp/nova-ai-source.tar.gz
+          cat .nova-ai-upload/part-0[0-3] | base64 --decode > /tmp/nova-ai-source.tar.gz
           tar -xzf /tmp/nova-ai-source.tar.gz -C /tmp/nova-ai-source
           cp -a /tmp/nova-ai-source/. .
           rm -rf .nova-ai-upload
