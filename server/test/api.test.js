@@ -101,6 +101,17 @@ test('documents API enforces ownership, project isolation, validation, and optim
     projectId: ownerProject.body.project.id,
   }).expect(201);
   const document = created.body.document;
+  await owner.post('/api/v1/documents').set(originHeaders).send({
+    title: '   ',
+    content: 'invalid title',
+  }).expect(400);
+  await owner.post('/api/v1/documents').set(originHeaders).send({
+    title: 'Oversized document',
+    content: 'x'.repeat(200001),
+  }).expect(400);
+  await owner.put('/api/v1/documents/' + document.id).set(originHeaders).send({
+    title: 'Missing version',
+  }).expect(400);
   assert.equal(document.title, 'Research notes');
   assert.equal(document.projectId, ownerProject.body.project.id);
   assert.equal(document.version, 1);
