@@ -121,6 +121,7 @@ router.get('/export', requireAuth, (req, res, next) => {
       projects,
       conversations,
       messages,
+      messageVersions,
       projectConversationLinks,
       authoredArticles,
       usage,
