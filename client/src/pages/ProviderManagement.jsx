@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Activity, CheckCircle2, Database, LockKeyhole, Pencil, Plus, RefreshCw, Server, ShieldCheck, Trash2, X } from 'lucide-react';
+import { CheckCircle2, Database, LockKeyhole, Pencil, Plus, RefreshCw, Server, ShieldCheck, Trash2, X } from 'lucide-react';
 import { api, json } from '../lib/api';
 import { Button, ErrorNotice, Loading } from '../components/UI';
 
@@ -235,7 +235,7 @@ export default function ProviderManagement() {
         <label className="provider-enabled-field"><input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} /> 启用此 Provider</label>
         <label className="provider-field-wide">模型列表（JSON）
           <textarea required rows={8} spellCheck={false} value={draft.modelsText} onChange={(event) => setDraft({ ...draft, modelsText: event.target.value })} />
-          <small>每个模型填写 id；name、enabled、capabilities、contextLimit 可选。contextLimit 是模型上下文 Token 上限，未知时填写 null。</small>
+          <small>每个模型填写 id；name、enabled、capabilities、contextLimit 可选。contextLimit 是可选的参考字段；当前仅保存和展示，不代表经过验证的上限，也不会限制请求。未知时填写 null。</small>
         </label>
       </div>
       <div className="provider-editor-actions">
@@ -261,7 +261,7 @@ export default function ProviderManagement() {
               const health = healthByModel[modelId];
               const publicModel = catalog?.models?.find((item) => item.id === modelId);
               return <div className="provider-model-row" key={model.id}>
-                <div><strong>{model.name || model.id}</strong><small>{model.id}{model.contextLimit ? ' · ' + model.contextLimit.toLocaleString() + ' context' : ' · context 未知'}</small></div>
+                <div><strong>{model.name || model.id}</strong><small>{model.id}{model.contextLimit ? ' · 配置参考值 ' + model.contextLimit.toLocaleString() : ' · 未填写上下文参考值'}</small></div>
                 <span className={'provider-model-status ' + (!model.enabled || !provider.enabled ? 'is-off' : '')}>{model.enabled && provider.enabled ? '已启用' : '已停用'}</span>
                 {publicModel?.selectable && <button type="button" onClick={() => checkModel(modelId)} disabled={Boolean(checkingModelId)}>{checkingModelId === modelId ? '检查中…' : healthLabels[health?.status || 'unknown']}</button>}
               </div>;
