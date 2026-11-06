@@ -10,7 +10,7 @@ const emptyDraft = () => ({
   apiKey: '',
   enabled: true,
   modelsText: JSON.stringify([
-    { id: 'your-model-id', name: 'Model display name', enabled: true, capabilities: ['chat', 'text'], contextLimit: null, tokenizer: 'auto' },
+    { id: 'your-model-id', name: 'Model display name', enabled: true, capabilities: ['chat', 'text'], contextLimit: null, tokenizer: 'auto', maxTokensParameter: 'auto' },
   ], null, 2),
 });
 
@@ -235,7 +235,7 @@ export default function ProviderManagement() {
         <label className="provider-enabled-field"><input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} /> 启用此 Provider</label>
         <label className="provider-field-wide">模型列表（JSON）
           <textarea required rows={8} spellCheck={false} value={draft.modelsText} onChange={(event) => setDraft({ ...draft, modelsText: event.target.value })} />
-          <small>每个模型填写 id；name、enabled、capabilities、contextLimit、tokenizer 可选。contextLimit 是管理员配置的参考上限；tokenizer 可填 auto、cl100k_base、o200k_base 或 none。自动识别仅覆盖常见 OpenAI 模型命名；其它模型请按实际 tokenizer 手动选择，否则使用保守字节上界。</small>
+          <small>每个模型填写 id；name、enabled、capabilities、contextLimit、tokenizer 可选。contextLimit 是管理员配置的参考上限；tokenizer 可填 auto、cl100k_base、o200k_base 或 none；maxTokensParameter 可填 auto、max_tokens、max_completion_tokens 或 none。自动参数会为 GPT-5 / o 系列使用 max_completion_tokens，其它常见聊天模型使用 max_tokens。</small>
         </label>
       </div>
       <div className="provider-editor-actions">
