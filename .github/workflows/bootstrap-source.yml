@@ -23,6 +23,9 @@ jobs:
           cat .nova-ai-upload/part-0[0-3] | base64 --decode > /tmp/nova-ai-source.tar.gz
           tar -xzf /tmp/nova-ai-source.tar.gz -C /tmp/nova-ai-source
           cp -a /tmp/nova-ai-source/. .
+          # Keep workflow files managed by the GitHub app connection.
+          git checkout -- .github/workflows/bootstrap-source.yml
+          rm -f .github/workflows/ci.yml
           rm -rf .nova-ai-upload
       - name: Install dependencies
         run: npm install --no-audit --no-fund
