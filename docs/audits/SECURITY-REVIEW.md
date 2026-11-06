@@ -10,7 +10,7 @@
 
 | 控制 | 代码证据 | 判断 |
 |---|---|---|
-| API 密钥服务端保存 | Provider 从服务端 config 读取 AI_API_KEY；前端 health/models 不读取密钥 | 正向 |
+| API 密钥服务端保存 | Provider 从服务端环境/AI_PROVIDERS_JSON 私密配置解析 Key；Models/Health 仅返回 provider/model 元数据 | 正向；多 Provider 集成测试断言两个 Key 均不出现在响应中 |
 | 环境文件忽略 | .gitignore 忽略 .env 和 .env.*，保留 .env.example | 正向；尚未执行全 Git 历史 secret scan |
 | 密码哈希 | bcryptjs cost 12，密码字段不返回 publicUser | 正向 |
 | Session Token | 32 bytes 随机值；数据库存 SHA-256 hash | 正向 |
@@ -74,3 +74,6 @@
 
 
 项目-会话关联安全复核：关联、列表与解除接口均以当前会话用户 ID 过滤项目和对话；不能通过提交其他账户的 projectId 或 conversationId 建立关系。CI 双账号测试覆盖读取他人项目关联、把他人对话加入自有项目、把自有对话加入他人项目，均返回 404。关系表外键启用级联清理。此结论仅限已覆盖的 API 路径，不代表完整渗透测试。
+
+
+模型注册表安全复核（2026-11-06）：多 Provider 原始配置（baseUrl、apiKey）仅保留在服务端私有注册表；公开 Models API 只返回 provider id/name/configuration state/model metadata，不返回 API Key 或 baseUrl。CI 的多 Provider 集成测试使用两个独立的私密 Key，验证 Models 和 Health 响应均不包含 Key，且请求会使用对应 Provider 的 Authorization header 与 upstream model ID。配置文件只应写入服务器环境，不要提交真实 AI_PROVIDERS_JSON 到仓库。尚未进行完整 Git 历史密钥扫描或生产部署验证。

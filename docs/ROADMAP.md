@@ -18,8 +18,10 @@
 ### V0.1 尚未完成（P0）
 - [ ] Provider 接口升级为流式/非流式统一适配，支持错误归一化和取消
 - [ ] SSE 增量输出、停止生成、客户端断连后取消上游
-- [ ] 服务端 Model/Provider Registry，多模型列表、能力和真实状态
-- [ ] Chat 模型选择、代码高亮、复制、编辑、重试和重新生成
+- [x] 服务端 Model/Provider Registry：多 OpenAI-compatible Provider、多模型目录、能力元数据与模型启停状态
+- [x] Chat 模型选择器按服务端目录切换，并将 public model ID 映射至 Provider 上游模型
+- [x] Chat 模型选择、用户消息编辑、复制、重试和重新生成
+- [ ] 代码语法高亮与代码块复制
 - [ ] 会话重命名；项目与会话关联
 - [ ] 按模型上下文窗口预算管理历史
 - [ ] AI 专属并发、每用户限流、资源配额和用量日志
@@ -72,3 +74,6 @@ V0.1 已进入可验证的流式聊天阶段：版本化 API、SQLite 消息状�
 
 
 Projects delivery update (2026-11-06): project-conversation migration v2, owner-scoped link/list/unlink APIs, Studio association management, and direct opening of a selected conversation in Chat are implemented. CI verifies cross-account rejection and passes 23 API tests. Project instructions, richer project context, and Documents remain later work.
+
+
+Model registry progress: `AI_PROVIDERS_JSON` now registers multiple OpenAI-compatible providers and models; `AI_DEFAULT_MODEL` selects the default, and the Chat selector sends its public model ID to a server-side resolver. Keys/base URLs stay server-side. CI test coverage has reached 24/24 API tests and verifies routing through two separate mock providers without exposing either key. Health remains `unknown` until an explicit health probe is implemented; browser-login/OAuth provider integrations are future work.

@@ -7,7 +7,7 @@
 | ID | 技术债 | 影响 | 建议处理方式 | 验收标准 |
 |---|---|---|---|---|
 | TD-01 | Provider 只有非流式 JSON 调用 | 长回复等待时间长；无法停止；断连不能取消上游 | 实现 SSE adapter，支持 AbortSignal、超时、断连清理和事件状态 | token delta 连续输出；停止和断连会取消上游；消息不会卡在生成中 |
-| TD-02 | Model/Provider Registry 仍不完整 | 多 Provider 配置与模型选择已有基础，但缺主动健康探测、管理界面与 failover | 已支持 AI_PROVIDERS_JSON 多 OpenAI-compatible Provider、服务端密钥解析、模型 public ID 与上游 ID 映射、enabled/selectable 和 Chat 选择器；下一步健康探测和运营管理 | Models API 永不返回密钥；停用模型不能调用；切换模型后请求命中对应 provider/baseUrl/upstreamModelId；未探测状态为 unknown |
+| TD-02 | Model/Provider Registry 仍不完整 | 多 Provider 配置与模型选择已落地，但缺主动健康探测、管理界面、自动发现与 failover | 已支持 AI_PROVIDERS_JSON 多 OpenAI-compatible Provider、服务端密钥解析、public model ID 与上游 ID 映射、enabled/selectable 和 Chat 选择器；CI 覆盖两家 Provider 实际路由及密钥不泄露 | Models API 不返回密钥或 baseUrl；停用模型不能调用；切换模型后请求命中对应 provider/baseUrl/upstreamModelId；未探测状态为 unknown |
 | TD-03 | 会话操作缺失 | 用户无法整理长期聊天 | 增加重命名、搜索/归档（按范围决定）、消息编辑、重试/重新生成接口 | 对话元数据可持久化；编辑后后续消息顺序与上下文一致 |
 | TD-04 | 消息操作尚不完整 | 常用 AI 工作流仍缺回答版本历史与撤销 | 已增加复制、用户消息编辑、末轮 assistant 重新生成和最新失败/取消回答重试；替换只在成功时提交，失败/取消保留旧分支 | 编辑/重试成功和失败测试通过；旧分支不会因 Provider 失败或停止而丢失；剩余补回答版本/撤销 |
 | TD-05 | 尚无 Provider Token 级上下文预算 | 模型窗口和实际 Token 数未知，固定消息条数不等于上下文预算 | 已增加 AI_MAX_CONTEXT_CHARS 字符预算，优先保留最近完整轮次；下一步按 Provider 元数据增加 Token 预算/摘要 | 当前字符预算超限时保留用户输入或明确拒绝；不把字符估算冒充精确 Token；后续增加各模型 contextLimit 校验 |
@@ -47,7 +47,7 @@
 
 ## 进度快照 — 2026-11-06
 
-- **已处理核心基础项：** TD-01（SSE/客户端断连取消集成测试）、TD-02（多 Provider/多模型目录、服务端密钥隔离和 Chat 模型选择器；健康探测/管理界面待做）、TD-03（会话重命名/删除基础）、TD-04（复制、用户消息编辑、末轮 assistant 重新生成和失败回答重试；回答版本历史仍待做）、TD-08（SQLite 版本迁移）、TD-10（/api/v1）。
+- **已处理核心基础项：** TD-01（SSE/客户端断连取消集成测试）、TD-02（多 Provider/多模型目录、服务端密钥隔离和 Chat 模型选择器；双 Provider 路由测试通过；健康探测/管理界面/自动发现/failover 待做）、TD-03（会话重命名/删除基础）、TD-04（复制、用户消息编辑、末轮 assistant 重新生成和失败回答重试；回答版本历史仍待做）、TD-08（SQLite 版本迁移）、TD-10（/api/v1）。
 - **部分缓解：** TD-06（每用户 6 次/分钟及单活动生成，仍为进程内状态，无 Token 预算）、TD-09（新增流式成功、JSON fallback、迁移、模型状态、频率/并发、双账号隔离、401/429/503/空流/超时和客户端断连测试；仍缺畸形流测试；项目对话跨账号关联负向测试已通过）。
 - **部分处理：** TD-05 已有字符预算，但 Token/模型窗口精确管理仍待办。
 - **已处理性能项：** TD-18 React 路由懒加载，构建主入口 276.17 kB / gzip 88.45 kB，无 500 kB chunk 告警。
@@ -56,3 +56,6 @@
 - **安全依赖修复：** Zod 3.25.76 已升级至 4.6.7，配套调用点和验证测试同步更新；最新完整 CI 的 npm ci 审计为 0 vulnerabilities。
 
 不要将“核心基础项已处理”理解为整项产品能力全部完成；未列明的子功能仍按 backlog 保留。
+
+
+模型注册表进度（2026-11-06）：`AI_PROVIDERS_JSON` 支持服务端配置多家 OpenAI-compatible Provider，并为模型生成 `providerId:upstreamModelId` 公共选择 ID。Chat 所选模型传到后端后由服务端映射上游地址、API Key 和上游模型名。多 Provider 集成测试实际调用两家本地 mock，且确认 Models/Health 响应不含 API Key；24 项 API 测试已通过。浏览器登录型 Provider（包括需要 OAuth/会话的服务）、主动健康探测和 failover 尚未实现。

@@ -100,3 +100,18 @@
 ## 5. 本次审计范围限制
 
 本审计是基于当前 GitHub main 分支源码及已显示 CI 记录的静态代码审查。没有对真实模型密钥进行端到端调用，没有进行公网渗透测试、负载测试、真机操作或完整 Git 历史 secret scan。因此相关项目均标为未验证，而不是宣称通过。
+
+
+## 2026-11-06 增量复核
+
+本节更新优先级高于上文基于早期审计 SHA 的历史快照。当前 main 已实现并通过 CI 的增量：
+
+- Chat：SSE 流式输出、停止/断连取消、会话重命名/删除、复制、编辑用户消息、末轮回答重新生成、失败回答重试。
+- Model/Provider：服务端 AI_PROVIDERS_JSON 多 OpenAI-compatible Provider 注册；每家可登记多个模型、启用状态与能力；AI_DEFAULT_MODEL 可指定默认；Chat 选择器只显示 selectable 模型，所选 ID 在服务端映射上游 URL、API Key 和上游 model ID。旧 AI_BASE_URL/AI_API_KEY/AI_MODEL 保持兼容。
+- 密钥保护：公开 Models/Health 接口只返回 Provider/Model 元数据，不返回 API Key 或 baseUrl。CI 集成测试验证两家不同 Provider 各自路由成功且密钥不出现在响应中。
+- Projects：project_conversations v2 迁移、归属校验 API、Studio 关联/移除及从项目直接打开指定对话。
+- Context：AI_MAX_CONTEXT_CHARS 字符预算（不是 Token 计量）。
+- 性能：React.lazy 路由拆包，构建主入口约 277 kB、gzip 约 89 kB，不再触发 500 kB chunk 警告。
+- 依赖：Zod 升级至 4.6.7；最新验证 CI 的 npm ci 审计为 0 vulnerabilities。
+
+最近一轮已完成的 CI 为 24/24 API tests、Vite production build success。仍未满足 V0.1 完成/公开发布的项目包括：主动 Provider 健康探测、管理员 Provider/Model 配置 UI、准确 usage 日志和管理员统计、403/畸形流等故障覆盖、精确 Token/contextLimit 预算、回答版本历史/撤销、账户数据导出/删除、第三方模型数据告知、严格 CSRF/Origin 策略、真机/Playwright E2E、备份恢复演练。OAuth/浏览器登录型 Provider（例如需要网页登录态的模型平台）不是当前 OpenAI-compatible JSON 注册表已经支持的能力，仍需独立适配。

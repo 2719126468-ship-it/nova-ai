@@ -17,7 +17,7 @@ Returns API health and whether the server has a complete AI provider configurati
 
 ### GET /api/v1/models
 
-Returns the server-side model catalog. API keys are never returned. The top-level provider object reports configuration separately from upstream health; configured providers remain health: unknown until a real probe is implemented. The health endpoint also returns ai.status as configured_unverified or not_configured.
+Returns the server-side model catalog. The response contains providers, models, defaultModelId and contextPolicy. API keys and provider base URLs are never returned. The top-level provider object reports configuration separately from upstream health; configured providers remain health: unknown until a real probe is implemented. The health endpoint returns ai.status as configured_unverified or not_configured.
 
 A configured model has this shape:
 
@@ -36,7 +36,7 @@ A configured model has this shape:
 }
 ```
 
-status: unknown means that the model is configured but has not been actively verified. Do not present this state as connected, healthy, or available. The initial release exposes one environment-configured model; it does not yet provide a multi-provider registry or live health probes.
+Model IDs returned by the catalog are the public selection IDs; multi-provider IDs use providerId:upstreamModelId. status: unknown means that the model is configured but has not been actively verified. Do not present this state as connected, healthy, or available. The current registry supports multiple OpenAI-compatible providers configured by the server; active health probes, browser-login/OAuth providers and automatic model discovery remain unimplemented.
 
 Malformed AI_PROVIDERS_JSON disables the multi-provider registry and reports AI_PROVIDERS_JSON_INVALID in the catalog; a non-empty invalid JSON setting does not silently fall back to legacy credentials.
 
