@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, ArrowUpRight, Check, FileText, FolderOpen, LoaderCircle, RefreshCw, ShieldCheck, Upload, X } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, Check, Copy, FileText, FolderOpen, LoaderCircle, RefreshCw, ShieldCheck, Upload, X } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, json } from '../lib/api';
 import { Button, EmptyState, ErrorNotice, Loading, PageIntro } from '../components/UI';
@@ -108,6 +108,16 @@ export function ProjectContextEditor() {
     }
   }
 
+  async function copyInstructions() {
+    try {
+      await navigator.clipboard.writeText(instructions);
+      setNotice('本地项目指令已复制到剪贴板。');
+      setError('');
+    } catch {
+      setError('浏览器未允许访问剪贴板，请手动复制编辑框内容后再读取最新版本。');
+    }
+  }
+
   async function uploadFile(file) {
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) {
@@ -186,8 +196,11 @@ export function ProjectContextEditor() {
     <ErrorNotice>{error}</ErrorNotice>
     {notice && <div className="project-context-notice" role="status"><Check size={14} /> {notice}</div>}
     {conflict && <div className="project-context-conflict">
-      <div><strong>项目指令已经在其他位置更新。</strong><p>你当前输入仍保留在这里。读取最新版本后再合并，或复制本地指令到安全位置。</p></div>
-      <Button variant="outline" onClick={() => load().catch((cause) => setError(cause.message))}>读取最新版本</Button>
+      <div><strong>项目指令已经在其他位置更新。</strong><p>你当前输入仍保留在这里。先复制本地指令，再读取最新版本并手动合并。</p></div>
+      <div className="project-context-conflict-actions">
+        <Button variant="outline" onClick={copyInstructions}><Copy size={13} /> 复制本地指令</Button>
+        <Button onClick={() => load().catch((cause) => setError(cause.message))}>读取最新版本</Button>
+      </div>
     </div>}
     <section className="project-context-panel">
       <div className="project-context-panel-heading">
