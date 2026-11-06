@@ -82,6 +82,22 @@ async function readJsonResponse(response) {
   }
 }
 
+function resolveMaxTokensParameter(model) {
+  const configured = model.maxTokensParameter || 'auto';
+  if (configured === 'none') return null;
+  if (configured === 'max_tokens' || configured === 'max_completion_tokens') return configured;
+
+  const modelId = String(model.upstreamModelId || model.id || '').toLowerCase();
+  return /^(gpt-5|o[1-9](?:-|$))/.test(modelId)
+    ? 'max_completion_tokens'
+    : 'max_tokens';
+}
+
+function isReasoningModel(model) {
+  const modelId = String(model.upstreamModelId || model.id || '').toLowerCase();
+  return /^(gpt-5|o[1-9](?:-|$))/.test(modelId);
+}
+
 async function withProviderRequest(messages, stream, externalSignal, consume, options = {}) {
   const model = resolveModel(options.modelId);
   if (!model) throw new ProviderNotConfiguredError();
@@ -105,7 +121,20 @@ async function withProviderRequest(messages, stream, externalSignal, consume, op
         'Content-Type': 'application/json',
         Accept: stream ? 'text/event-stream' : 'application/json',
       },
-      body: JSON.stringify({ model: model.upstreamModelId, messages, temperature: 0.7, stream }),
+      body: JSON.stringify((() => {
+        const body = {
+          model: model.upstreamModelId,
+          messages,
+          stream,
+        };
+        if (!isReasoningModel(model)) body.temperature = 0.7;
+        const outputLimit = options.maxOutputTokens;
+        const limitParameter = resolveMaxTokensParameter(model);
+        if (limitParameter && Number.isSafeInteger(outputLimit) && outputLimit > 0) {
+          body[limitParameter] = outputLimit;
+        }
+        return body;
+      })()),
       signal: controller.signal,
     });
 
