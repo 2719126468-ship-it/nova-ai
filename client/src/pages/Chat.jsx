@@ -4,30 +4,6 @@ import { useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-const codeHighlightLanguages = {
-  javascript,
-  typescript,
-  python,
-  json: jsonLanguage,
-  bash,
-  css: cssLanguage,
-  xml,
-  sql,
-  yaml,
-  markdown,
-  java,
-  go,
-  diff,
-};
-const codeHighlightAliases = {
-  javascript: ['js', 'jsx', 'mjs', 'cjs'],
-  typescript: ['ts', 'tsx'],
-  python: ['py', 'py3'],
-  bash: ['sh', 'shell', 'zsh'],
-  xml: ['html', 'xhtml', 'svg'],
-  yaml: ['yml'],
-  markdown: ['md'],
-};
 import { api, apiStream, json } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { ErrorNotice, Loading } from '../components/UI';
@@ -301,7 +277,7 @@ export default function Chat() {
     </aside>
     <section className="chat-main">
       <div className="chat-topbar"><div className="chat-topbar-left">{!sidebarOpen && <button className="icon-button" onClick={() => setSidebarOpen(true)} aria-label="展开侧边栏"><Menu size={18} /></button>}<div className="chat-model-badge"><span className="model-spark">✳</span>{selectableModels.length ? <select className="chat-model-select" aria-label="选择模型" value={selectedModel?.id || ''} onChange={(event) => setSelectedModelId(event.target.value)} disabled={sending}>{selectableModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}</select> : <strong>{modelName}</strong>}<ChevronDown size={14} /></div><span className="chat-beta">PREVIEW</span></div><button className="chat-top-action" onClick={createConversation}><CirclePlus size={15} /> 新对话</button></div>
-      <div className="chat-scroll-area">{loading ? <Loading label="正在加载对话…" /> : messages.length === 0 ? <div className="chat-welcome"><div className="chat-welcome-symbol">✳</div><span className="chat-welcome-overline">NOVA INTELLIGENCE</span><h1>你好，{user?.name || '探索者'}。<br /><span>今天想从哪里开始？</span></h1><p>写下一个问题、一个想法，或者你正在尝试解决的事情。</p><div className="prompt-suggestions"><button onClick={() => setDraft('帮我把一个复杂想法拆解成可以执行的步骤。')}>⌁ <span>拆解一个复杂问题</span></button><button onClick={() => setDraft('帮我梳理一个新产品的定位和核心功能。')}>✳ <span>构思一个新产品</span></button><button onClick={() => setDraft('解释一个我最近正在学习的技术概念。')}>⌘ <span>理解一个技术概念</span></button></div></div> : <div className="message-thread">{messages.map((message, index) => <div className={'chat-message chat-message-' + message.role} key={message.id || (message.role + '-' + index)}><div className="message-avatar">{message.role === 'assistant' ? <span>✳</span> : <UserRound size={16} />}</div><div className="message-content"><div className="message-author">{message.role === 'assistant' ? 'NOVA' : user?.name || '你'}</div>{message.status && message.status !== 'complete' && <div className={'message-status message-status-' + message.status}>{message.status === 'streaming' ? '正在生成' : message.status === 'cancelled' ? '已停止生成' : '生成失败'}</div>}<div className="message-actions"><button type="button" onClick={() => copyMessage(message)} aria-label="复制消息" title="复制消息">{copiedMessageId === message.id ? <Check size={13} /> : <Copy size={13} />}<span>{copiedMessageId === message.id ? '已复制' : '复制'}</span></button>{!sending && message.role === 'user' && <button type="button" onClick={() => beginEditMessage(message)} aria-label="编辑消息" title="编辑消息"><Pencil size={13} /><span>编辑</span></button>}{!sending && index === messages.length - 1 && message.status === 'complete' && message.role === 'assistant' && messages[index - 1]?.role === 'user' && <button type="button" onClick={() => regenerateMessage(messages[index - 1])} aria-label="重新生成" title="重新生成"><RefreshCw size={13} /><span>重新生成</span></button>}{!sending && index === messages.length - 1 && message.role === 'assistant' && ['failed', 'cancelled'].includes(message.status) && messages[index - 1]?.role === 'user' && <button type="button" onClick={() => retryMessage(message, messages[index - 1])} aria-label="重试回答" title="重试回答"><RefreshCw size={13} /><span>重试</span></button>}</div><div className="markdown-body">{/(^|\\n)\\s*`{3}/.test(message.content || '') ? (
+      <div className="chat-scroll-area">{loading ? <Loading label="正在加载对话…" /> : messages.length === 0 ? <div className="chat-welcome"><div className="chat-welcome-symbol">✳</div><span className="chat-welcome-overline">NOVA INTELLIGENCE</span><h1>你好，{user?.name || '探索者'}。<br /><span>今天想从哪里开始？</span></h1><p>写下一个问题、一个想法，或者你正在尝试解决的事情。</p><div className="prompt-suggestions"><button onClick={() => setDraft('帮我把一个复杂想法拆解成可以执行的步骤。')}>⌁ <span>拆解一个复杂问题</span></button><button onClick={() => setDraft('帮我梳理一个新产品的定位和核心功能。')}>✳ <span>构思一个新产品</span></button><button onClick={() => setDraft('解释一个我最近正在学习的技术概念。')}>⌘ <span>理解一个技术概念</span></button></div></div> : <div className="message-thread">{messages.map((message, index) => <div className={'chat-message chat-message-' + message.role} key={message.id || (message.role + '-' + index)}><div className="message-avatar">{message.role === 'assistant' ? <span>✳</span> : <UserRound size={16} />}</div><div className="message-content"><div className="message-author">{message.role === 'assistant' ? 'NOVA' : user?.name || '你'}</div>{message.status && message.status !== 'complete' && <div className={'message-status message-status-' + message.status}>{message.status === 'streaming' ? '正在生成' : message.status === 'cancelled' ? '已停止生成' : '生成失败'}</div>}<div className="message-actions"><button type="button" onClick={() => copyMessage(message)} aria-label="复制消息" title="复制消息">{copiedMessageId === message.id ? <Check size={13} /> : <Copy size={13} />}<span>{copiedMessageId === message.id ? '已复制' : '复制'}</span></button>{!sending && message.role === 'user' && <button type="button" onClick={() => beginEditMessage(message)} aria-label="编辑消息" title="编辑消息"><Pencil size={13} /><span>编辑</span></button>}{!sending && index === messages.length - 1 && message.status === 'complete' && message.role === 'assistant' && messages[index - 1]?.role === 'user' && <button type="button" onClick={() => regenerateMessage(messages[index - 1])} aria-label="重新生成" title="重新生成"><RefreshCw size={13} /><span>重新生成</span></button>}{!sending && index === messages.length - 1 && message.role === 'assistant' && ['failed', 'cancelled'].includes(message.status) && messages[index - 1]?.role === 'user' && <button type="button" onClick={() => retryMessage(message, messages[index - 1])} aria-label="重试回答" title="重试回答"><RefreshCw size={13} /><span>重试</span></button>}</div><div className="markdown-body">{/(^|\n)\s*`{3}/.test(message.content || '') ? (
           <Suspense fallback={<ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>}>
             <HighlightedMarkdown content={message.content} />
           </Suspense>
