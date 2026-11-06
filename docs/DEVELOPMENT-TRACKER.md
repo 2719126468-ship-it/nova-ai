@@ -7,7 +7,7 @@
 
 ## Progress
 
-**5 / 12 complete** · 1 in progress · 6 planned
+**6 / 12 complete** · 1 in progress · 5 planned
 
 The existing V0.1 implementation is the foundation. Do not rebuild or replace working authentication, chat, SSE, model routing, Studio, account, or data-lifecycle flows. Extend them incrementally.
 
@@ -32,8 +32,8 @@ The existing V0.1 implementation is the foundation. Do not rebuild or replace wo
 
 | ID | Priority | Task | Status | Completion criteria |
 |---|---|---|---|---|
-| B2-01 | P0 | Provider management UI | **In progress** | Authorized administrators can add/edit/disable providers and models without exposing secrets to the browser; validate configuration and show honest connection state. |
-| B2-02 | P0 | Model context-window and budget management | Planned | Enforce configured model context limits; distinguish provider-reported limits, tokenizer estimates, and unknown values; preserve the current user message and explain truncation/limits. |
+| B2-01 | P0 | Provider management UI | **Complete** | Migration v5 stores managed OpenAI-compatible Providers; AES-256-GCM protects keys at rest; admin-only CRUD/default-model APIs and responsive UI support models, enable/disable and health checks; environment Providers remain read-only and take precedence; all API tests/build passed in CI runs #61/#62 and main run #63. |
+| B2-02 | P0 | Model context-window and budget management | **In progress** | Enforce configured model context limits; distinguish provider-reported limits, tokenizer estimates, and unknown values; preserve the current user message and explain truncation/limits. |
 
 Additional model-system follow-ups, after the two P0 tasks: tokenizer-based estimation, health-state persistence/refresh, automatic model discovery, controlled failover, native Anthropic API support, and OAuth/browser-session providers. Each protocol requires its own adapter and security review; OpenAI-compatible support does not imply compatibility with browser-login providers.
 
@@ -73,6 +73,15 @@ Documents comes before project context/file management, and Research follows tho
 - Added administrator-only list/create/update/delete/default-model endpoints. Environment-configured Providers remain read-only and retain precedence.
 - Added the first responsive Provider management screen under Admin, including model catalog editing, enable/disable, default selection, and read-only health probes.
 - Added integration coverage for role enforcement, ciphertext-at-rest, secret redaction, upstream health checks, environment precedence, and model disable/delete behavior. Keep B2-01 in progress until all branch CI checks pass.
+
+## 2026-11-07 — B2-01 completed
+
+- Added SQLite migration v5 for managed Providers and persistent default model settings.
+- Admin-only APIs and a responsive Admin screen support adding, editing, disabling, deleting, and selecting OpenAI-compatible Providers/models.
+- Provider API keys are stored using AES-256-GCM; the dedicated `PROVIDER_ENCRYPTION_KEY` is required and must be backed up securely. Neither plaintext nor ciphertext leaves the server.
+- Environment-defined Providers remain read-only and take precedence over database-managed IDs.
+- Added regression tests for administrator permissions, production HTTPS validation, secret redaction, encrypted storage, health checks, environment precedence, default model selection, and disable/delete behavior.
+- PR #9 merged as `8a0c6c65117abf3ba4a0eb9c3c82d3b60f0bda46`; PR CI runs #61/#62 passed and post-merge main CI run #63 passed.
 
 ## Completed work log
 
