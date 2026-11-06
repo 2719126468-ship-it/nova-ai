@@ -163,7 +163,7 @@ function getStoredDefaultModelId() {
 
 function buildCatalog(privateProviders, configurationError) {
   const reportedWindows = new Map(db.prepare(
-    'SELECT provider_id,upstream_model_id,context_tokens,checked_at FROM model_context_windows',
+    'SELECT provider_id,upstream_model_id,context_tokens,checked_at FROM model_context_windows WHERE datetime(checked_at) >= datetime(\'now\', \'-30 days\')',
   ).all().map((row) => [row.provider_id + ':' + row.upstream_model_id, row]));
   const models = privateProviders.flatMap((provider) => provider.models.map((model) => ({
     id: model.id,
