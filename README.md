@@ -153,7 +153,7 @@ AI_TIMEOUT_MS=60000
 - `AI_MODEL` 是供应商要求的模型标识。
 - 修改配置后重启服务端。
 - 尚未配置完整的三个值时，聊天接口会返回 `503 AI_PROVIDER_NOT_CONFIGURED`；不会生成虚构回答。
-- 当前适配层是非流式请求。SSE/流式输出、工具调用、图片输入和供应商专属协议可在后续版本扩展。
+- 旧版 `POST /api/conversations/:id/messages` 保留完整 JSON 响应；新版 `POST /api/v1/conversations/:id/messages/stream` 支持 SSE 增量输出、上游请求取消和消息生命周期状态。模型目录会区分“配置完整”与“已验证连通”；当前尚无主动健康检查、多 Provider 注册表、工具调用或图片输入。
 
 ## 测试与构建
 
@@ -194,6 +194,7 @@ API 集成测试会使用临时 SQLite 文件，不会覆盖你的开发数据�
 ## 产品基线与代码审计
 
 - [正式产品基线 / NOVA-PRD-1.0](docs/PRODUCT-BASELINE.md)
+- [API v1 接口契约](docs/API-V1.md)
 - [V0.1 源码实现审计](docs/audits/NOVA-V0.1-IMPLEMENTATION-AUDIT.md)
 - [技术债清单](docs/audits/TECH-DEBT.md)
 - [安全与隐私审查](docs/audits/SECURITY-REVIEW.md)

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { config } from './config.js';
+import { runMigrations } from './migrations.js';
 
 if (config.dbPath !== ':memory:') fs.mkdirSync(path.dirname(config.dbPath), { recursive: true });
 
@@ -70,6 +71,8 @@ CREATE TABLE IF NOT EXISTS articles (
 );
 CREATE INDEX IF NOT EXISTS idx_articles_status_published ON articles(status, published_at DESC);
 `);
+
+runMigrations(db);
 
 const articleCount = db.prepare('SELECT COUNT(*) AS count FROM articles').get().count;
 if (articleCount === 0) {
