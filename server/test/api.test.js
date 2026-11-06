@@ -898,6 +898,7 @@ test('failed edit regeneration preserves the original conversation branch', asyn
     const saved = db.prepare(
       'SELECT role,content,status FROM messages WHERE conversation_id=? ORDER BY id',
     ).all(conversationId);
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM message_versions WHERE message_id=?').get(db.prepare("SELECT id FROM messages WHERE conversation_id=? AND role='assistant' ORDER BY id LIMIT 1").get(conversationId).id).count, 0);
     assert.deepEqual(saved, [
       { role: 'user', content: 'original first question', status: 'complete' },
       { role: 'assistant', content: 'original first answer', status: 'complete' },
@@ -1172,6 +1173,8 @@ test('failed assistant retry preserves the previous failed response', async () =
     ]);
     const usage = db.prepare("SELECT operation,status,error_code FROM ai_usage WHERE user_id=(SELECT id FROM users WHERE email=?) ORDER BY id DESC LIMIT 1").get('message-retry-failure@example.com');
     assert.deepEqual(usage, { operation: 'retry', status: 'failed', error_code: 'AI_PROVIDER_UNAVAILABLE' });
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM message_versions WHERE message_id=?')
+      .get(db.prepare("SELECT id FROM messages WHERE conversation_id=? AND role='assistant'").get(id).id).count, 0);
   } finally {
     config.aiBaseUrl = previous.aiBaseUrl;
     config.aiApiKey = previous.aiApiKey;
