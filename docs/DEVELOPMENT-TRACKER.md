@@ -92,6 +92,14 @@ Documents comes before project context/file management, and Research follows tho
 - Chat responses/UI expose context policy and history truncation; regression tests cover oversized messages, reasoning/non-reasoning output fields, provider opt-out, and model context provenance. PR CI run #67 passed API tests and production build.
 - B3-01 is now in progress: implement owned Documents schema and API as the first NOVA 0.2 workspace foundation.
 
+## 2026-11-07 — B3-01 implementation in progress
+
+- Added migration v7 with a user-owned Markdown documents table, project association, content/title constraints, update version, indexes, and SQLite ownership triggers.
+- Added authenticated list/create/read/update/delete API endpoints under `/api/v1/documents`; all reads and writes are owner-scoped and cross-account access returns 404.
+- Updates require `expectedVersion` and return 409 on stale writes, providing the concurrency contract needed by the upcoming autosave editor.
+- Deleting a project detaches its documents rather than deleting them; account deletion cascades documents. Account export schema v5 now contains complete document content.
+- Added integration coverage for CRUD, search/pagination, project ownership, stale version conflicts, project deletion, account export, and account deletion. B3-01 remains in progress until CI passes.
+
 ## Completed work log
 
 ### 2026-11-07 — B1-01
