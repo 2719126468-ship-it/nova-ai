@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, CirclePlus, Copy, Menu, MessageSquare, MoreHorizontal, PanelLeftClose, Pencil, RefreshCw, Send, Sparkles, Square, Trash2, UserRound } from 'lucide-react';
+import { Check, ChevronDown, CirclePlus, Copy, History, Menu, MessageSquare, MoreHorizontal, PanelLeftClose, Pencil, RefreshCw, Send, Sparkles, Square, Trash2, UserRound } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -26,6 +26,10 @@ export default function Chat() {
   const [selectedModelId, setSelectedModelId] = useState('');
   const [copiedMessageId, setCopiedMessageId] = useState(null);
   const [editingMessageId, setEditingMessageId] = useState(null);
+  const [versionMessageId, setVersionMessageId] = useState(null);
+  const [versionsByMessage, setVersionsByMessage] = useState({});
+  const [loadingVersionsId, setLoadingVersionsId] = useState(null);
+  const [restoringVersionId, setRestoringVersionId] = useState(null);
   const endRef = useRef(null);
   const abortRef = useRef(null);
   const pendingSequence = useRef(0);
@@ -39,6 +43,8 @@ export default function Chat() {
     abortRef.current?.abort();
     setActiveId(id);
     setEditingMessageId(null);
+    setVersionMessageId(null);
+    setVersionsByMessage({});
     setDraft('');
     setError('');
     const data = await api('/api/v1/conversations/' + id);
@@ -109,6 +115,47 @@ export default function Chat() {
       window.setTimeout(() => setCopiedMessageId((current) => current === message.id ? null : current), 1200);
     } catch {
       setError('复制失败。请检查浏览器剪贴板权限，或手动选择文本复制。');
+    }
+  }
+
+  async function toggleMessageVersions(message) {
+    if (versionMessageId === message.id) {
+      setVersionMessageId(null);
+      return;
+    }
+    setVersionMessageId(message.id);
+    if (Object.prototype.hasOwnProperty.call(versionsByMessage, message.id)) return;
+
+    setLoadingVersionsId(message.id);
+    try {
+      const data = await api('/api/v1/conversations/' + activeId + '/messages/' + message.id + '/versions');
+      setVersionsByMessage((current) => ({ ...current, [message.id]: data.versions || [] }));
+    } catch (e) {
+      setError(e.message);
+      setVersionMessageId(null);
+    } finally {
+      setLoadingVersionsId(null);
+    }
+  }
+
+  async function restoreAnswerVersion(message, version) {
+    if (sending || restoringVersionId) return;
+    const confirmed = window.confirm('恢复这个历史回答？当前回答也会保存到历史版本中，可以再次切换回来。');
+    if (!confirmed) return;
+
+    setRestoringVersionId(version.id);
+    setError('');
+    try {
+      const data = await api(
+        '/api/v1/conversations/' + activeId + '/messages/' + message.id + '/restore',
+        { method: 'POST', body: json({ versionId: version.id }) },
+      );
+      setMessages((current) => current.map((item) => item.id === message.id ? data.message : item));
+      setVersionsByMessage((current) => ({ ...current, [message.id]: data.versions || [] }));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setRestoringVersionId(null);
     }
   }
 
@@ -277,7 +324,7 @@ export default function Chat() {
     </aside>
     <section className="chat-main">
       <div className="chat-topbar"><div className="chat-topbar-left">{!sidebarOpen && <button className="icon-button" onClick={() => setSidebarOpen(true)} aria-label="展开侧边栏"><Menu size={18} /></button>}<div className="chat-model-badge"><span className="model-spark">✳</span>{selectableModels.length ? <select className="chat-model-select" aria-label="选择模型" value={selectedModel?.id || ''} onChange={(event) => setSelectedModelId(event.target.value)} disabled={sending}>{selectableModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}</select> : <strong>{modelName}</strong>}<ChevronDown size={14} /></div><span className="chat-beta">PREVIEW</span></div><button className="chat-top-action" onClick={createConversation}><CirclePlus size={15} /> 新对话</button></div>
-      <div className="chat-scroll-area">{loading ? <Loading label="正在加载对话…" /> : messages.length === 0 ? <div className="chat-welcome"><div className="chat-welcome-symbol">✳</div><span className="chat-welcome-overline">NOVA INTELLIGENCE</span><h1>你好，{user?.name || '探索者'}。<br /><span>今天想从哪里开始？</span></h1><p>写下一个问题、一个想法，或者你正在尝试解决的事情。</p><div className="prompt-suggestions"><button onClick={() => setDraft('帮我把一个复杂想法拆解成可以执行的步骤。')}>⌁ <span>拆解一个复杂问题</span></button><button onClick={() => setDraft('帮我梳理一个新产品的定位和核心功能。')}>✳ <span>构思一个新产品</span></button><button onClick={() => setDraft('解释一个我最近正在学习的技术概念。')}>⌘ <span>理解一个技术概念</span></button></div></div> : <div className="message-thread">{messages.map((message, index) => <div className={'chat-message chat-message-' + message.role} key={message.id || (message.role + '-' + index)}><div className="message-avatar">{message.role === 'assistant' ? <span>✳</span> : <UserRound size={16} />}</div><div className="message-content"><div className="message-author">{message.role === 'assistant' ? 'NOVA' : user?.name || '你'}</div>{message.status && message.status !== 'complete' && <div className={'message-status message-status-' + message.status}>{message.status === 'streaming' ? '正在生成' : message.status === 'cancelled' ? '已停止生成' : '生成失败'}</div>}<div className="message-actions"><button type="button" onClick={() => copyMessage(message)} aria-label="复制消息" title="复制消息">{copiedMessageId === message.id ? <Check size={13} /> : <Copy size={13} />}<span>{copiedMessageId === message.id ? '已复制' : '复制'}</span></button>{!sending && message.role === 'user' && <button type="button" onClick={() => beginEditMessage(message)} aria-label="编辑消息" title="编辑消息"><Pencil size={13} /><span>编辑</span></button>}{!sending && index === messages.length - 1 && message.status === 'complete' && message.role === 'assistant' && messages[index - 1]?.role === 'user' && <button type="button" onClick={() => regenerateMessage(messages[index - 1])} aria-label="重新生成" title="重新生成"><RefreshCw size={13} /><span>重新生成</span></button>}{!sending && index === messages.length - 1 && message.role === 'assistant' && ['failed', 'cancelled'].includes(message.status) && messages[index - 1]?.role === 'user' && <button type="button" onClick={() => retryMessage(message, messages[index - 1])} aria-label="重试回答" title="重试回答"><RefreshCw size={13} /><span>重试</span></button>}</div><div className="markdown-body">{/(^|\n)\s*`{3}/.test(message.content || '') ? (
+      <div className="chat-scroll-area">{loading ? <Loading label="正在加载对话…" /> : messages.length === 0 ? <div className="chat-welcome"><div className="chat-welcome-symbol">✳</div><span className="chat-welcome-overline">NOVA INTELLIGENCE</span><h1>你好，{user?.name || '探索者'}。<br /><span>今天想从哪里开始？</span></h1><p>写下一个问题、一个想法，或者你正在尝试解决的事情。</p><div className="prompt-suggestions"><button onClick={() => setDraft('帮我把一个复杂想法拆解成可以执行的步骤。')}>⌁ <span>拆解一个复杂问题</span></button><button onClick={() => setDraft('帮我梳理一个新产品的定位和核心功能。')}>✳ <span>构思一个新产品</span></button><button onClick={() => setDraft('解释一个我最近正在学习的技术概念。')}>⌘ <span>理解一个技术概念</span></button></div></div> : <div className="message-thread">{messages.map((message, index) => <div className={'chat-message chat-message-' + message.role} key={message.id || (message.role + '-' + index)}><div className="message-avatar">{message.role === 'assistant' ? <span>✳</span> : <UserRound size={16} />}</div><div className="message-content"><div className="message-author">{message.role === 'assistant' ? 'NOVA' : user?.name || '你'}</div>{message.status && message.status !== 'complete' && <div className={'message-status message-status-' + message.status}>{message.status === 'streaming' ? '正在生成' : message.status === 'cancelled' ? '已停止生成' : '生成失败'}</div>}<div className="message-actions"><button type="button" onClick={() => copyMessage(message)} aria-label="复制消息" title="复制消息">{copiedMessageId === message.id ? <Check size={13} /> : <Copy size={13} />}<span>{copiedMessageId === message.id ? '已复制' : '复制'}</span></button>{!sending && message.role === 'user' && <button type="button" onClick={() => beginEditMessage(message)} aria-label="编辑消息" title="编辑消息"><Pencil size={13} /><span>编辑</span></button>}{!sending && index === messages.length - 1 && message.status === 'complete' && message.role === 'assistant' && messages[index - 1]?.role === 'user' && <button type="button" onClick={() => regenerateMessage(messages[index - 1])} aria-label="重新生成" title="重新生成"><RefreshCw size={13} /><span>重新生成</span></button>}{!sending && index === messages.length - 1 && message.role === 'assistant' && ['failed', 'cancelled'].includes(message.status) && messages[index - 1]?.role === 'user' && <button type="button" onClick={() => retryMessage(message, messages[index - 1])} aria-label="重试回答" title="重试回答"><RefreshCw size={13} /><span>重试</span></button>}{!sending && message.role === 'assistant' && (message.version_count || 0) > 0 && <button type="button" onClick={() => toggleMessageVersions(message)} aria-expanded={versionMessageId === message.id} aria-label="查看回答历史版本" title="查看回答历史版本"><History size={13} /><span>版本 {message.version_count}</span></button>}</div>{versionMessageId === message.id && <div className="message-version-panel"><div className="message-version-heading"><History size={13} /><span>历史回答版本</span></div>{loadingVersionsId === message.id ? <div className="message-version-empty">正在读取版本…</div> : (versionsByMessage[message.id] || []).length ? (versionsByMessage[message.id] || []).map((version) => <div className="message-version-item" key={version.id}><div className="message-version-meta"><span>{version.source === 'edit_regeneration' ? '编辑前' : version.source === 'retry' ? '重试前' : '恢复前'}</span><time>{new Date(String(version.created_at).replace(' ', 'T') + 'Z').toLocaleString()}</time></div><div className="message-version-preview">{version.content || '（空回答）'}</div><button type="button" className="message-version-restore" disabled={sending || Boolean(restoringVersionId)} onClick={() => restoreAnswerVersion(message, version)}>{restoringVersionId === version.id ? '恢复中…' : '恢复此版本'}</button></div>) : <div className="message-version-empty">暂无历史版本。</div>}</div>}<div className="markdown-body">{/(^|\n)\s*`{3}/.test(message.content || '') ? (
           <Suspense fallback={<ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>}>
             <HighlightedMarkdown content={message.content} />
           </Suspense>

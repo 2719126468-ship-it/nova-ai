@@ -92,6 +92,8 @@ All endpoints below require an authenticated session.
 | POST | /api/v1/conversations/:id/messages/stream | Send a message and stream the assistant response |
 | PUT | /api/v1/conversations/:id/messages/:messageId/stream | Edit a previous user message and stream its replacement response |
 | POST | /api/v1/conversations/:id/messages/:messageId/retry/stream | Retry the latest failed/cancelled assistant response |
+| GET | /api/v1/conversations/:id/messages/:messageId/versions | List prior versions of an assistant answer |
+| POST | /api/v1/conversations/:id/messages/:messageId/restore | Restore a selected prior answer version |
 
 The conversation owner is checked on every operation. A user cannot read, rename, send messages to, or delete another user's conversation.
 
@@ -126,6 +128,16 @@ The original conversation remains intact while the replacement is being generate
 Use `POST /api/v1/conversations/:id/messages/:messageId/retry/stream` for the latest assistant message when its status is `failed` or `cancelled`. The route resolves the immediately preceding completed user question and rebuilds context from completed history before that question.
 
 Only the last message in the conversation can be retried, so an older failure cannot silently erase later conversation turns. The original failed/cancelled response remains stored while the retry runs. On success, NOVA atomically deletes the old failed response and saves the replacement. On another failure or cancellation, the pending retry is discarded and the original failed response remains available. The Chat UI shows Retry only on the final failed/cancelled assistant message.
+
+### Assistant answer versions and restore
+
+A successful edit/regeneration stores the assistant answer that was replaced as a version of the new assistant message. A successful retry similarly preserves the prior failed/cancelled answer. Existing versions are carried forward when the answer is replaced again. Failed or cancelled edits/retries do not change the visible branch or create a replacement version.
+
+Use `GET /api/v1/conversations/:id/messages/:messageId/versions` to list versions for an assistant message. The conversation must belong to the authenticated user and the message must be an assistant answer.
+
+Use `POST /api/v1/conversations/:id/messages/:messageId/restore` with `{ "versionId": 123 }` to restore a selected version. The selected version becomes current, while the previously current answer is saved as a new restorable version. This is a reversible swap, so users can move between the current and earlier answer without losing either. Restoring is blocked while the account has an active generation; a version must belong to the specific assistant message.
+
+The `GET /api/v1/conversations/:id` message objects include `version_count` so clients can show a history control only when versions exist. Answer versions are private user data: they are included in account JSON export and cascade-delete with their parent message or account.
 
 ### SSE events
 
@@ -205,4 +217,4 @@ Administrators can read the latest records and aggregate totals through `GET /ap
 - The server does not yet perform active model health checks.
 - Context considers up to 30 completed messages and trims older turns to the configured character budget; provider-specific token counting and context-window limits remain pending.
 - Persistent request Usage records now capture lifecycle, duration, provider/model, normalized failure code, and upstream-reported token counts when supplied. Tokenizer-based estimates, model pricing/cost accounting, hard account budgets, tools, attachments, and provider failover remain unimplemented. Per-user request throttling and one-active-generation controls use a process-local store.
-- The old non-streaming JSON message endpoint remains available for compatibility; the Chat UI uses the streaming endpoint. User-message edits and assistant regeneration use the versioned PUT streaming endpoint and commit the replacement branch only after success.
+- The old non-streaming JSON message endpoint remains available for compatibility; the Chat UI uses the streaming endpoint. User-message edits and assistant regeneration use the versioned PUT streaming endpoint and commit the replacement branch only after success. Assistant answer versions can be listed and restored with the conversation version endpoints.

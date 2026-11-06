@@ -87,6 +87,13 @@ router.get('/export', requireAuth, (req, res, next) => {
       FROM messages m JOIN conversations c ON c.id=m.conversation_id
       WHERE c.user_id=? ORDER BY m.conversation_id,m.id
     `).all(userId);
+    const messageVersions = db.prepare(`
+      SELECT v.id,v.message_id,v.content,v.status,v.error_code,v.source,v.created_at
+      FROM message_versions v
+      JOIN messages m ON m.id=v.message_id
+      JOIN conversations c ON c.id=m.conversation_id
+      WHERE c.user_id=? ORDER BY v.message_id,v.id
+    `).all(userId);
     const projectConversationLinks = db.prepare(`
       SELECT pc.project_id,pc.conversation_id,pc.created_at
       FROM project_conversations pc JOIN projects p ON p.id=pc.project_id
@@ -108,12 +115,13 @@ router.get('/export', requireAuth, (req, res, next) => {
       'Content-Disposition': 'attachment; filename="nova-account-export-' + userId + '.json"',
     });
     res.json({
-      schemaVersion: 2,
+      schemaVersion: 4,
       exportedAt: new Date().toISOString(),
       account,
       projects,
       conversations,
       messages,
+      messageVersions,
       projectConversationLinks,
       authoredArticles,
       usage,
