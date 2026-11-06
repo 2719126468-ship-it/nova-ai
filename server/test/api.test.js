@@ -119,6 +119,12 @@ test('database migrations add message lifecycle fields and are idempotent', () =
   const settingsColumns = new Set(db.prepare('PRAGMA table_info(ai_settings)').all().map((column) => column.name));
   assert.ok(settingsColumns.has('key'));
   assert.ok(settingsColumns.has('value'));
+  const contextColumns = new Set(db.prepare('PRAGMA table_info(model_context_windows)').all().map((column) => column.name));
+  assert.ok(contextColumns.has('provider_id'));
+  assert.ok(contextColumns.has('upstream_model_id'));
+  assert.ok(contextColumns.has('context_tokens'));
+  assert.ok(contextColumns.has('source'));
+  assert.ok(contextColumns.has('checked_at'));
 });
 
 test('versioned models endpoint does not claim an unconfigured model is connected', async () => {
