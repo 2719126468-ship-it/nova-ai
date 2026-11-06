@@ -168,7 +168,7 @@ router.delete('/me', requireAuth, async (req, res, next) => {
     res.set('Cache-Control', 'no-store');
     res.json({
       success: true,
-      message: '账户、项目、对话、消息和登录会话已删除。已发布的 Research 内容会保留，作者关联已清除。',
+      message: '账户、项目、文档、对话、消息和登录会话已删除。已发布的 Research 内容会保留，作者关联已清除。',
     });
   } catch (error) {
     next(error);
