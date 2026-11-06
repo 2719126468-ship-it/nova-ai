@@ -10,7 +10,8 @@ import {
   streamAssistantReply,
   ProviderNotConfiguredError,
 } from '../services/provider.js';
-import { isPositiveId } from '../utils.js';\nimport { startUsageRecord, finishUsageRecord } from '../services/usage.js';
+import { isPositiveId } from '../utils.js';
+import { startUsageRecord, finishUsageRecord } from '../services/usage.js';
 
 const router = Router();
 const activeGenerations = new Set();
@@ -93,7 +94,8 @@ function buildPrompt(conversationId, currentContent, beforeMessageId = null) {
 async function streamAssistantResponse(res, prompt, pending, generationKey, hooks = {}) {
   const controller = new AbortController();
   let clientDisconnected = false;
-  let partialContent = '';\n  let providerUsage = null;
+  let partialContent = '';
+  let providerUsage = null;
   const onClose = () => {
     if (!res.writableEnded) {
       clientDisconnected = true;
@@ -114,13 +116,15 @@ async function streamAssistantResponse(res, prompt, pending, generationKey, hook
     userMessage: pending.userMessage,
     assistantMessageId: pending.assistantMessageId,
     modelId: hooks.modelId || getModelRegistry().defaultModelId,
+    requestId: hooks.usageRecord?.requestId || null,
   });
 
   try {
     const content = await streamAssistantReply(prompt, {
       modelId: hooks.modelId || getModelRegistry().defaultModelId,
       signal: controller.signal,
-      onUsage(usage) { providerUsage = usage; },\n      onDelta(delta) {
+      onUsage(usage) { providerUsage = usage; },
+      onDelta(delta) {
         partialContent += delta;
         sendSse(res, 'message_delta', {
           messageId: pending.assistantMessageId,
@@ -139,7 +143,8 @@ async function streamAssistantResponse(res, prompt, pending, generationKey, hook
         'SELECT id,role,content,status,error_code,created_at FROM messages WHERE id=?',
       ).get(pending.assistantMessageId);
     }
-    finishUsageRecord(hooks.usageRecord, { status: 'succeeded', usage: providerUsage });\n    sendSse(res, 'message_complete', { assistantMessage, requestId: hooks.usageRecord?.requestId || null });
+    finishUsageRecord(hooks.usageRecord, { status: 'succeeded', usage: providerUsage });
+    sendSse(res, 'message_complete', { assistantMessage, requestId: hooks.usageRecord?.requestId || null });
     if (!res.writableEnded && !res.destroyed) res.end();
   } catch (error) {
     const cancelled = clientDisconnected || error?.code === 'AI_REQUEST_CANCELLED';
@@ -159,6 +164,7 @@ async function streamAssistantResponse(res, prompt, pending, generationKey, hook
     if (!clientDisconnected && !res.writableEnded && !res.destroyed) {
       sendSse(res, cancelled ? 'message_cancelled' : 'message_error', {
         messageId: pending.assistantMessageId,
+        requestId: hooks.usageRecord?.requestId || null,
         code: cancelled ? 'AI_REQUEST_CANCELLED' : (error?.code || 'AI_PROVIDER_ERROR'),
         message: cancelled ? '生成已取消。' : (error?.message || '模型生成失败，请重试。'),
       });
