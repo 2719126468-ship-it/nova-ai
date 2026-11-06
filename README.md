@@ -15,6 +15,7 @@ NOVA 不是静态展示模板。前端页面通过 REST API 读取和写入 SQLi
 | Research | 分类筛选、搜索、文章详情、Markdown 阅读 | 已实现；初始文章是示例内容 |
 | Research CMS | 管理员创建、编辑、发布、删除文章 | 已实现 |
 | Studio | 项目创建、列表、详情编辑、手动保存、项目删除、关联 AI 对话 | 核心项目工作流已实现 |
+| Project Context | 项目专属指令、版本冲突保护、UTF-8 文本资料上传/下载/删除、显式纳入 AI 上下文 | 后端与管理 UI 已接入；文件默认不进入上下文 |
 | Documents | 私有 Markdown 文档库、项目关联、创建/编辑/预览、自动保存、版本冲突恢复、Markdown 下载 | 编辑器首版已实现；待 CI 验证与后续增强 |
 | User Center | 注册、登录、注销、个人资料修改、密码修改、项目入口 | 已实现 |
 | Models | 多 Provider 模型目录、管理员 Provider 管理、密钥加密、默认模型、按需健康探测、上下文预算与 Chat 模型切换 | 基础管理已实现；原生 Anthropic 与浏览器登录 Provider 待做 |
@@ -58,7 +59,7 @@ nova-ai/
 │   ├── scripts/              # 管理员初始化工具
 │   ├── src/
 │   │   ├── middleware/       # 身份认证、请求来源校验
-│   │   ├── routes/            # Auth、Projects、Documents、Conversations、Research、Admin
+│   │   ├── routes/            # Auth、Projects、Project Context/Files、Documents、Conversations、Research、Admin
 │   │   ├── services/          # AI Provider Adapter
 │   │   ├── app.js
 │   │   ├── config.js
