@@ -101,7 +101,12 @@ test('database migrations add message lifecycle fields and are idempotent', () =
   assert.ok(columns.has('status'));
   assert.ok(columns.has('error_code'));
   const versions = db.prepare('SELECT version FROM schema_migrations ORDER BY version').all();
-  assert.deepEqual(versions.map((row) => row.version), [1, 2]);
+  assert.deepEqual(versions.map((row) => row.version), [1, 2, 3]);
+  const usageColumns = new Set(db.prepare('PRAGMA table_info(ai_usage)').all().map((column) => column.name));
+  assert.ok(usageColumns.has('request_id'));
+  assert.ok(usageColumns.has('provider_id'));
+  assert.ok(usageColumns.has('input_tokens'));
+  assert.ok(usageColumns.has('status'));
 });
 
 test('versioned models endpoint does not claim an unconfigured model is connected', async () => {
@@ -141,6 +146,7 @@ test('SSE chat streams deltas and persists the completed assistant message', asy
       outgoing.write('data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n');
       setTimeout(() => {
         outgoing.write('data: {"choices":[{"delta":{"content":" from NOVA"}}]}\n\n');
+        outgoing.write('data: {"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}\n\n');
         outgoing.end('data: [DONE]\n\n');
       }, 5);
     });
@@ -199,6 +205,20 @@ test('SSE chat streams deltas and persists the completed assistant message', asy
     assert.equal(messages[1].content, 'Hello from NOVA');
     assert.equal(messages[1].status, 'complete');
     assert.equal(messages[1].error_code, null);
+    const usage = db.prepare(
+      'SELECT request_id,provider_id,model_id,operation,status,duration_ms,input_tokens,output_tokens,total_tokens,usage_source FROM ai_usage WHERE user_id=(SELECT id FROM users WHERE email=?) ORDER BY id DESC LIMIT 1',
+    ).get('test@example.com');
+    assert.equal(typeof usage.request_id, 'string');
+    assert.equal(usage.provider_id, 'openai-compatible');
+    assert.equal(usage.model_id, 'mock-chat-model');
+    assert.equal(usage.operation, 'stream');
+    assert.equal(usage.status, 'succeeded');
+    assert.ok(usage.duration_ms >= 0);
+    assert.equal(usage.input_tokens, 7);
+    assert.equal(usage.output_tokens, 3);
+    assert.equal(usage.total_tokens, 10);
+    assert.equal(usage.usage_source, 'provider');
+    assert.ok(response.body.includes(usage.request_id));
   } finally {
     config.aiBaseUrl = previous.aiBaseUrl;
     config.aiApiKey = previous.aiApiKey;
@@ -208,6 +228,65 @@ test('SSE chat streams deltas and persists the completed assistant message', asy
   }
 });
 
+
+
+
+test('legacy JSON chat stores Provider-reported usage and returns a request reference', async () => {
+  providerServer = createServer((incoming, outgoing) => {
+    incoming.resume();
+    incoming.on('end', () => {
+      outgoing.writeHead(200, { 'Content-Type': 'application/json' });
+      outgoing.end(JSON.stringify({
+        choices: [{ message: { content: 'Legacy JSON response' } }],
+        usage: { prompt_tokens: 12, completion_tokens: 5, total_tokens: 17 },
+      }));
+    });
+  });
+  await new Promise((resolve) => providerServer.listen(0, '127.0.0.1', resolve));
+  const previous = {
+    aiBaseUrl: config.aiBaseUrl,
+    aiApiKey: config.aiApiKey,
+    aiModel: config.aiModel,
+  };
+  config.aiBaseUrl = 'http://127.0.0.1:' + providerServer.address().port + '/v1';
+  config.aiApiKey = 'json-usage-test-secret';
+  config.aiModel = 'mock-json-usage-model';
+
+  try {
+    const agent = request.agent(app);
+    await agent.post('/api/v1/auth/register').set(originHeaders).send({
+      email: 'json-usage@example.com',
+      name: 'JSON Usage Tester',
+      password: 'json-usage-password-strong',
+    }).expect(201);
+    const created = await agent.post('/api/v1/conversations').set(originHeaders)
+      .send({ title: 'JSON Usage' }).expect(201);
+    const response = await agent.post('/api/v1/conversations/' + created.body.conversation.id + '/messages')
+      .set(originHeaders).send({ content: 'Please return JSON usage' }).expect(201);
+
+    assert.equal(response.body.assistantMessage.content, 'Legacy JSON response');
+    assert.equal(typeof response.body.requestId, 'string');
+    assert.equal(JSON.stringify(response.body).includes('json-usage-test-secret'), false);
+    const usage = db.prepare(
+      'SELECT request_id,operation,status,input_tokens,output_tokens,total_tokens,usage_source FROM ai_usage WHERE request_id=?',
+    ).get(response.body.requestId);
+    assert.deepEqual(usage, {
+      request_id: response.body.requestId,
+      operation: 'chat',
+      status: 'succeeded',
+      input_tokens: 12,
+      output_tokens: 5,
+      total_tokens: 17,
+      usage_source: 'provider',
+    });
+  } finally {
+    config.aiBaseUrl = previous.aiBaseUrl;
+    config.aiApiKey = previous.aiApiKey;
+    config.aiModel = previous.aiModel;
+    await new Promise((resolve) => providerServer.close(resolve));
+    providerServer = null;
+  }
+});
 
 test('stream endpoint falls back to a complete JSON response when the provider ignores stream mode', async () => {
   providerServer = createServer((incoming, outgoing) => {
@@ -414,6 +493,14 @@ test('upstream authentication, rate-limit, server, and empty-stream failures are
       } else if (prompt.includes('provider-403')) {
         outgoing.writeHead(403, { 'Content-Type': 'application/json' });
         outgoing.end(JSON.stringify({ error: 'upstream permission detail' }));
+      } else if (prompt.includes('provider-400')) {
+        outgoing.writeHead(400, { 'Content-Type': 'application/json' });
+        outgoing.end(JSON.stringify({ error: 'invalid provider request detail' }));
+      } else if (prompt.includes('provider-invalid-json')) {
+        outgoing.writeHead(200, { 'Content-Type': 'application/json' });
+        outgoing.end('{ malformed json');
+      } else if (prompt.includes('provider-network-error')) {
+        incoming.socket.destroy();
       } else if (prompt.includes('provider-429')) {
         outgoing.writeHead(429, { 'Content-Type': 'application/json' });
         outgoing.end(JSON.stringify({ error: 'upstream quota detail' }));
@@ -440,26 +527,31 @@ test('upstream authentication, rate-limit, server, and empty-stream failures are
   config.aiModel = 'mock-error-model';
 
   try {
-    const agent = request.agent(app);
-    await agent.post('/api/v1/auth/register').set(originHeaders).send({
-      email: 'provider-errors@example.com',
-      name: 'Provider Error Tester',
-      password: 'provider-error-password-strong',
-    }).expect(201);
-    const created = await agent.post('/api/v1/conversations').set(originHeaders)
-      .send({ title: 'Provider errors' }).expect(201);
-    const id = created.body.conversation.id;
-    const url = '/api/v1/conversations/' + id + '/messages/stream';
     const cases = [
-      ['provider-401', 'AI_PROVIDER_ERROR'],
-      ['provider-403', 'AI_PROVIDER_ERROR'],
+      ['provider-401', 'AI_PROVIDER_AUTH_FAILED'],
+      ['provider-403', 'AI_PROVIDER_AUTH_FAILED'],
+      ['provider-400', 'AI_PROVIDER_REJECTED'],
       ['provider-429', 'AI_PROVIDER_RATE_LIMITED'],
       ['provider-503', 'AI_PROVIDER_UNAVAILABLE'],
       ['provider-empty', 'AI_EMPTY_RESPONSE'],
       ['provider-malformed', 'AI_INVALID_STREAM'],
+      ['provider-invalid-json', 'AI_INVALID_RESPONSE'],
+      ['provider-network-error', 'AI_PROVIDER_UNREACHABLE'],
     ];
 
-    for (const [prompt, code] of cases) {
+    for (let index = 0; index < cases.length; index += 1) {
+      const [prompt, code] = cases[index];
+      const email = 'provider-errors-' + index + '@example.com';
+      const agent = request.agent(app);
+      await agent.post('/api/v1/auth/register').set(originHeaders).send({
+        email,
+        name: 'Provider Error Tester ' + index,
+        password: 'provider-error-password-strong',
+      }).expect(201);
+      const created = await agent.post('/api/v1/conversations').set(originHeaders)
+        .send({ title: 'Provider errors' }).expect(201);
+      const id = created.body.conversation.id;
+      const url = '/api/v1/conversations/' + id + '/messages/stream';
       const response = await agent.post(url).set(originHeaders)
         .send({ content: prompt })
         .buffer(true)
@@ -477,11 +569,19 @@ test('upstream authentication, rate-limit, server, and empty-stream failures are
       assert.equal(response.body.includes('private upstream detail'), false);
       assert.equal(response.body.includes('upstream quota detail'), false);
       assert.equal(response.body.includes('upstream permission detail'), false);
+      assert.equal(response.body.includes('invalid provider request detail'), false);
 
       const saved = db.prepare(
         "SELECT status,error_code FROM messages WHERE conversation_id=? AND role='assistant' ORDER BY id DESC LIMIT 1",
       ).get(id);
       assert.deepEqual(saved, { status: 'failed', error_code: code });
+      const usage = db.prepare(
+        'SELECT status,error_code,usage_source,input_tokens FROM ai_usage WHERE user_id=(SELECT id FROM users WHERE email=?) ORDER BY id DESC LIMIT 1',
+      ).get(email);
+      assert.equal(usage.status, 'failed');
+      assert.equal(usage.error_code, code);
+      assert.equal(usage.usage_source, null);
+      assert.equal(usage.input_tokens, null);
     }
   } finally {
     config.aiBaseUrl = previous.aiBaseUrl;
@@ -722,6 +822,10 @@ test('client disconnect aborts upstream generation and persists cancelled status
       error_code: 'AI_REQUEST_CANCELLED',
       content: 'partial-content',
     });
+    const cancelledUsage = db.prepare(
+      "SELECT status,error_code FROM ai_usage WHERE user_id=(SELECT id FROM users WHERE email=?) ORDER BY id DESC LIMIT 1",
+    ).get('provider-cancel@example.com');
+    assert.deepEqual(cancelledUsage, { status: 'cancelled', error_code: 'AI_REQUEST_CANCELLED' });
   } finally {
     if (clientServer.listening) await new Promise((resolve) => clientServer.close(resolve));
     config.aiBaseUrl = previous.aiBaseUrl;
@@ -796,6 +900,8 @@ test('failed edit regeneration preserves the original conversation branch', asyn
       { role: 'user', content: 'original later question', status: 'complete' },
       { role: 'assistant', content: 'original later answer', status: 'complete' },
     ]);
+    const usage = db.prepare("SELECT operation,status,error_code FROM ai_usage WHERE user_id=(SELECT id FROM users WHERE email=?) ORDER BY id DESC LIMIT 1").get('message-edit-failure@example.com');
+    assert.deepEqual(usage, { operation: 'edit', status: 'failed', error_code: 'AI_PROVIDER_UNAVAILABLE' });
   } finally {
     config.aiBaseUrl = previous.aiBaseUrl;
     config.aiApiKey = previous.aiApiKey;
@@ -887,6 +993,8 @@ test('editing a user message replaces that turn and deletes later conversation h
       { role: 'user', content: 'edited follow-up', status: 'complete' },
       { role: 'assistant', content: 'Rewritten assistant message', status: 'complete' },
     ]);
+    const usage = db.prepare("SELECT operation,status,error_code FROM ai_usage WHERE user_id=(SELECT id FROM users WHERE email=?) ORDER BY id DESC LIMIT 1").get('message-edit@example.com');
+    assert.deepEqual(usage, { operation: 'edit', status: 'succeeded', error_code: null });
   } finally {
     config.aiBaseUrl = previous.aiBaseUrl;
     config.aiApiKey = previous.aiApiKey;
@@ -957,6 +1065,8 @@ test('retrying a failed assistant message replaces it only after a successful re
       { role: 'user', content: 'original question', status: 'complete', error_code: null },
       { role: 'assistant', content: 'Recovered assistant response', status: 'complete', error_code: null },
     ]);
+    const usage = db.prepare("SELECT operation,status,error_code FROM ai_usage WHERE user_id=(SELECT id FROM users WHERE email=?) ORDER BY id DESC LIMIT 1").get('message-retry@example.com');
+    assert.deepEqual(usage, { operation: 'retry', status: 'succeeded', error_code: null });
   } finally {
     config.aiBaseUrl = previous.aiBaseUrl;
     config.aiApiKey = previous.aiApiKey;
@@ -1019,6 +1129,8 @@ test('failed assistant retry preserves the previous failed response', async () =
       { role: 'user', content: 'question to retry', status: 'complete', error_code: null },
       { role: 'assistant', content: 'keep this failed response', status: 'failed', error_code: 'AI_TIMEOUT' },
     ]);
+    const usage = db.prepare("SELECT operation,status,error_code FROM ai_usage WHERE user_id=(SELECT id FROM users WHERE email=?) ORDER BY id DESC LIMIT 1").get('message-retry-failure@example.com');
+    assert.deepEqual(usage, { operation: 'retry', status: 'failed', error_code: 'AI_PROVIDER_UNAVAILABLE' });
   } finally {
     config.aiBaseUrl = previous.aiBaseUrl;
     config.aiApiKey = previous.aiApiKey;
@@ -1257,6 +1369,8 @@ test('account export includes owned work but excludes password and session crede
   const user = db.prepare('SELECT id FROM users WHERE email=?').get('account-export@example.com');
   db.prepare('INSERT INTO articles(slug,title,body,author_id) VALUES(?,?,?,?)')
     .run('account-export-article', 'My authored article', 'Research content', user.id);
+  db.prepare("INSERT INTO ai_usage (request_id,user_id,provider_id,model_id,operation,status,duration_ms,input_tokens,output_tokens,total_tokens,usage_source,completed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)")
+    .run('export-usage-request', user.id, 'deepseek', 'deepseek:chat', 'chat', 'succeeded', 420, 9, 3, 12, 'provider');
 
   const response = await agent.get('/api/v1/auth/export').expect(200);
   assert.equal(response.headers['cache-control'], 'no-store');
@@ -1265,6 +1379,9 @@ test('account export includes owned work but excludes password and session crede
   assert.equal(response.body.projects[0].content, 'project notes');
   assert.equal(response.body.conversations.length, 1);
   assert.equal(response.body.messages[0].content, 'My private chat message');
+  assert.equal(response.body.usage.length, 1);
+  assert.equal(response.body.usage[0].request_id, 'export-usage-request');
+  assert.equal(response.body.usage[0].total_tokens, 12);
   assert.equal(response.body.projectConversationLinks.length, 1);
   assert.equal(response.body.authoredArticles[0].slug, 'account-export-article');
 
@@ -1297,6 +1414,8 @@ test('account deletion requires password and email confirmation then cascades pr
     .set(originHeaders).send({ conversationId }).expect(201);
   db.prepare('INSERT INTO articles(slug,title,body,author_id) VALUES(?,?,?,?)')
     .run('account-delete-article', 'Published article', 'Site content remains', user.id);
+  db.prepare("INSERT INTO ai_usage (request_id,user_id,provider_id,model_id,operation,status) VALUES (?,?,?,?,?,?)")
+    .run('delete-usage-request', user.id, 'deepseek', 'deepseek:chat', 'chat', 'succeeded');
 
   await agent.delete('/api/v1/auth/me').set(originHeaders)
     .send({ currentPassword: 'wrong-password', confirmEmail: 'account-delete@example.com' })
@@ -1318,6 +1437,7 @@ test('account deletion requires password and email confirmation then cascades pr
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM conversations WHERE user_id=?').get(user.id).count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM messages WHERE conversation_id=?').get(conversationId).count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM project_conversations WHERE user_id=?').get(user.id).count, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM ai_usage WHERE user_id=?').get(user.id).count, 0);
   const retainedArticle = db.prepare('SELECT author_id,body FROM articles WHERE slug=?').get('account-delete-article');
   assert.equal(retainedArticle.author_id, null);
   assert.equal(retainedArticle.body, 'Site content remains');
@@ -1417,6 +1537,10 @@ test('non-streaming client disconnect aborts upstream request and releases the g
     assert.equal(recovery.status, 201, 'generation lock should be released after client disconnect');
     const payload = await recovery.json();
     assert.equal(payload.assistantMessage.content, 'Request after cancellation succeeded');
+    const recoveredUsage = db.prepare(
+      "SELECT status,error_code FROM ai_usage WHERE user_id=(SELECT id FROM users WHERE email=?) ORDER BY id DESC LIMIT 1",
+    ).get('non-stream-cancel@example.com');
+    assert.deepEqual(recoveredUsage, { status: 'succeeded', error_code: null });
     assert.equal(providerCalls, 2);
   } finally {
     if (clientServer.listening) await new Promise((resolve) => clientServer.close(resolve));
@@ -1426,5 +1550,53 @@ test('non-streaming client disconnect aborts upstream request and releases the g
     if (providerServer?.listening) await new Promise((resolve) => providerServer.close(resolve));
     providerServer = null;
   }
+});
+
+test('administrator usage endpoint returns stored records and provider-reported token totals', async () => {
+  const admin = request.agent(app);
+  await admin.post('/api/v1/auth/register').set(originHeaders).send({
+    email: 'usage-admin@example.com',
+    name: 'Usage Admin',
+    password: 'usage-admin-password-strong',
+  }).expect(201);
+  const adminUser = db.prepare('SELECT id FROM users WHERE email=?').get('usage-admin@example.com');
+  db.prepare("UPDATE users SET role='admin' WHERE id=?").run(adminUser.id);
+  const baseline = db.prepare(`
+    SELECT COUNT(*) AS requests,
+      SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END) AS succeeded,
+      SUM(CASE WHEN usage_source='provider' THEN 1 ELSE 0 END) AS providerReportedRequests,
+      COALESCE(SUM(input_tokens),0) AS reportedInputTokens,
+      COALESCE(SUM(output_tokens),0) AS reportedOutputTokens,
+      COALESCE(SUM(total_tokens),0) AS reportedTotalTokens
+    FROM ai_usage
+  `).get();
+  db.prepare("INSERT INTO ai_usage (request_id,user_id,provider_id,model_id,operation,status,duration_ms,input_tokens,output_tokens,total_tokens,usage_source,completed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)")
+    .run('admin-usage-record', adminUser.id, 'provider-a', 'provider-a:model-a', 'stream', 'succeeded', 120, 10, 5, 15, 'provider');
+  db.prepare("INSERT INTO ai_usage (request_id,user_id,provider_id,model_id,operation,status,duration_ms) VALUES (?,?,?,?,?,?,?)")
+    .run('admin-usage-unknown', adminUser.id, 'provider-b', 'provider-b:model-b', 'chat', 'succeeded', 80);
+
+  await admin.post('/api/v1/auth/login').set(originHeaders)
+    .send({ email: 'usage-admin@example.com', password: 'usage-admin-password-strong' }).expect(200);
+  const report = await admin.get('/api/v1/admin/usage?limit=10').expect(200);
+  assert.equal(report.body.summary.requests, baseline.requests + 2);
+  assert.equal(report.body.summary.succeeded, baseline.succeeded + 2);
+  assert.equal(report.body.summary.providerReportedRequests, baseline.providerReportedRequests + 1);
+  assert.equal(report.body.summary.reportedInputTokens, baseline.reportedInputTokens + 10);
+  assert.equal(report.body.summary.reportedOutputTokens, baseline.reportedOutputTokens + 5);
+  assert.equal(report.body.summary.reportedTotalTokens, baseline.reportedTotalTokens + 15);
+  assert.ok(report.body.records.every((record) => !Object.hasOwn(record, 'content')));
+  const unknown = report.body.records.find((record) => record.request_id === 'admin-usage-unknown');
+  assert.equal(unknown.total_tokens, null);
+  assert.equal(unknown.usage_source, null);
+
+  const regular = request.agent(app);
+  await regular.post('/api/v1/auth/register').set(originHeaders).send({
+    email: 'usage-regular@example.com',
+    name: 'Regular User',
+    password: 'usage-regular-password-strong',
+  }).expect(201);
+  await regular.post('/api/v1/auth/login').set(originHeaders)
+    .send({ email: 'usage-regular@example.com', password: 'usage-regular-password-strong' }).expect(200);
+  await regular.get('/api/v1/admin/usage').expect(403);
 });
 

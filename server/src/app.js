@@ -139,7 +139,11 @@ export function createApp() {
   }));
   app.use((error, req, res, next) => {
     if (res.headersSent) return next(error);
-    if (error?.code && error?.status) return res.status(error.status).json({ error: error.code, message: error.message });
+    if (error?.code && error?.status) return res.status(error.status).json({
+      error: error.code,
+      message: error.message,
+      ...(error.requestId ? { requestId: error.requestId } : {}),
+    });
     if (error?.type === 'entity.too.large') return res.status(413).json({ error: 'PAYLOAD_TOO_LARGE', message: '请求内容过大。' });
     console.error('[NOVA API]', error);
     res.status(500).json({ error: 'INTERNAL_ERROR', message: '服务器发生错误，请稍后重试。' });

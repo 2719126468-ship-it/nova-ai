@@ -162,19 +162,36 @@ Clients should use AbortController to cancel the streaming fetch when the user p
 
 | Code | HTTP status | Meaning |
 |---|---:|---|
-| AI_PROVIDER_NOT_CONFIGURED | 503 | Required server-side AI environment variables are missing |
+| AI_PROVIDER_NOT_CONFIGURED | 503 | No enabled server-side model is configured |
 | MODEL_NOT_FOUND | 404 | Requested model is not enabled by server configuration |
+| AI_PROVIDER_AUTH_FAILED | 502 | Upstream rejected the server-side credentials or model permission |
 | AI_PROVIDER_RATE_LIMITED | 429 | Upstream provider rate-limited the request |
 | AI_PROVIDER_UNAVAILABLE | 502 | Upstream provider returned a server error |
-| AI_PROVIDER_ERROR | 502 | Upstream provider rejected the request |
+| AI_PROVIDER_REJECTED | 502 | Upstream rejected the request (for example, unsupported parameters or invalid model) |
+| AI_PROVIDER_UNREACHABLE | 502 | NOVA could not connect to the upstream provider |
 | AI_TIMEOUT | 504 | Upstream request exceeded the configured timeout |
+| AI_REQUEST_CANCELLED | 499 | The client cancelled or disconnected during generation |
 | AI_EMPTY_RESPONSE | 502 | Provider completed without usable text |
+| AI_INVALID_RESPONSE | 502 | Provider returned malformed JSON |
 | AI_INVALID_STREAM | 502 | Provider returned malformed SSE data |
+| AI_PROVIDER_STREAM_ERROR | 502 | Provider sent an error event inside an SSE response |
+| AI_PROVIDER_ERROR | 502 | Legacy fallback for an unclassified provider error |
 | AI_INPUT_TOO_LARGE | 413 | Current message exceeds the configured character budget |
 | AI_RATE_LIMITED | 429 | Authenticated user's generation frequency limit was reached |
 | AI_GENERATION_IN_PROGRESS | 409 | Another generation is already active for this user |
 
-Provider error messages are normalized rather than returning raw upstream response bodies. API credentials remain server-side.
+Provider HTTP statuses, network failures, timeouts, JSON/SSE parse errors, empty completions, and cancellation are normalized to stable NOVA error codes. Raw upstream bodies, credential values, and private provider details are not returned. When a request reaches a configured provider, JSON errors include a `requestId`; streaming clients receive the same reference in `message_start` and terminal events.
+
+
+## Usage records
+
+Every model generation that reaches the Provider layer creates a server-side usage record. This covers the legacy JSON chat route, streaming chat, editing/regenerating a user turn, and retrying a failed response.
+
+Records contain a random request ID, account ID, provider/model ID, operation, lifecycle status, normalized error code, elapsed milliseconds, provider-reported input/output/total token counts when supplied, and timestamps. NOVA does not save prompts or assistant content in the usage table, and it never stores provider API keys or base URLs there.
+
+Token fields remain `null` when the Provider does not return usage metadata. NOVA does not infer exact tokens from character counts, and it does not calculate monetary cost without trusted provider pricing and usage data.
+
+Administrators can read the latest records and aggregate totals through `GET /api/v1/admin/usage?limit=50` (administrator session required; limit is clamped to 1–100). The aggregate labels explicitly refer to Provider-reported token values. Account JSON export includes the account's own usage history; deleting an account deletes its usage records through the user foreign-key cascade.
 
 ## Generation limits
 
@@ -187,5 +204,5 @@ Provider error messages are normalized rather than returning raw upstream respon
 - One OpenAI-compatible provider and one configured model are supported.
 - The server does not yet perform active model health checks.
 - Context considers up to 30 completed messages and trims older turns to the configured character budget; provider-specific token counting and context-window limits remain pending.
-- Usage metering and provider token/quota accounting, tools, attachments, and provider failover are not implemented. Per-user request throttling and one-active-generation controls are implemented with a process-local store.
+- Persistent request Usage records now capture lifecycle, duration, provider/model, normalized failure code, and upstream-reported token counts when supplied. Tokenizer-based estimates, model pricing/cost accounting, hard account budgets, tools, attachments, and provider failover remain unimplemented. Per-user request throttling and one-active-generation controls use a process-local store.
 - The old non-streaming JSON message endpoint remains available for compatibility; the Chat UI uses the streaming endpoint. User-message edits and assistant regeneration use the versioned PUT streaming endpoint and commit the replacement branch only after success.

@@ -14,6 +14,35 @@ router.get('/overview', (req, res) => {
   const recentUsers = db.prepare('SELECT id,email,name,role,created_at FROM users ORDER BY id DESC LIMIT 12').all();
   res.json({ stats, recentUsers });
 });
+
+router.get('/usage', (req, res) => {
+  const requestedLimit = Number(req.query.limit ?? 50);
+  const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 50;
+  const summary = db.prepare(`
+    SELECT
+      COUNT(*) AS requests,
+      COALESCE(SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END),0) AS succeeded,
+      COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failed,
+      COALESCE(SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END),0) AS cancelled,
+      COALESCE(SUM(CASE WHEN usage_source='provider' THEN 1 ELSE 0 END),0) AS providerReportedRequests,
+      COALESCE(SUM(input_tokens),0) AS reportedInputTokens,
+      COALESCE(SUM(output_tokens),0) AS reportedOutputTokens,
+      COALESCE(SUM(total_tokens),0) AS reportedTotalTokens
+    FROM ai_usage
+  `).get();
+  const records = db.prepare(`
+    SELECT request_id,user_id,provider_id,model_id,operation,status,error_code,duration_ms,
+      input_tokens,output_tokens,total_tokens,usage_source,created_at,completed_at
+    FROM ai_usage ORDER BY id DESC LIMIT ?
+  `).all(limit);
+  res.json({
+    summary: {
+      ...summary,
+      note: 'Token totals include only values reported by upstream providers; null values are unknown, not zero estimates.',
+    },
+    records,
+  });
+});
 router.get('/articles', (req, res) => {
   const articles = db.prepare('SELECT id,slug,title,category,summary,body,status,published_at,updated_at FROM articles ORDER BY updated_at DESC LIMIT 100').all();
   res.json({ articles });

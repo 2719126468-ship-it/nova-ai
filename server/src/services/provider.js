@@ -1,42 +1,91 @@
 import { config } from '../config.js';
 import { resolveModel } from './model-registry.js';
 
-function createProviderError(status) {
+export class ProviderRequestError extends Error {
+  constructor(code, status, message, options = {}) {
+    super(message);
+    this.name = 'ProviderRequestError';
+    this.code = code;
+    this.status = status;
+    this.retryable = Boolean(options.retryable);
+    this.providerStatus = Number.isInteger(options.providerStatus) ? options.providerStatus : null;
+  }
+}
+
+function createProviderHttpError(status) {
+  if (status === 401 || status === 403) {
+    return new ProviderRequestError('AI_PROVIDER_AUTH_FAILED', 502,
+      '模型服务凭据无效或无权访问所选模型，请检查服务器端 Provider 配置。',
+      { providerStatus: status });
+  }
+  if (status === 408 || status === 504) {
+    return new ProviderRequestError('AI_TIMEOUT', 504, '模型服务处理请求超时，请稍后重试。',
+      { retryable: true, providerStatus: status });
+  }
   if (status === 429) {
-    const error = new Error('模型服务当前受到限流，请稍后重试。');
-    error.code = 'AI_PROVIDER_RATE_LIMITED';
-    error.status = 429;
-    return error;
+    return new ProviderRequestError('AI_PROVIDER_RATE_LIMITED', 429, '模型服务当前受到限流，请稍后重试。',
+      { retryable: true, providerStatus: status });
   }
   if (status >= 500) {
-    const error = new Error('模型服务暂时不可用，请稍后重试。');
-    error.code = 'AI_PROVIDER_UNAVAILABLE';
-    error.status = 502;
-    return error;
+    return new ProviderRequestError('AI_PROVIDER_UNAVAILABLE', 502, '模型服务暂时不可用，请稍后重试。',
+      { retryable: true, providerStatus: status });
   }
-  const error = new Error('模型服务拒绝了本次请求，请检查服务端模型配置。');
-  error.code = 'AI_PROVIDER_ERROR';
-  error.status = 502;
-  return error;
+  return new ProviderRequestError('AI_PROVIDER_REJECTED', 502,
+    '模型服务拒绝了本次请求，请检查模型名称、权限和请求配置。', { providerStatus: status });
 }
 
 function createTimeoutError() {
-  const error = new Error('模型请求超时，请稍后重试。');
-  error.code = 'AI_TIMEOUT';
-  error.status = 504;
-  return error;
+  return new ProviderRequestError('AI_TIMEOUT', 504, '模型请求超过配置的超时时间，请稍后重试。', {
+    retryable: true,
+  });
 }
 
 function createCancelledError() {
-  const error = new Error('客户端已取消本次生成。');
-  error.code = 'AI_REQUEST_CANCELLED';
-  error.status = 499;
-  return error;
+  return new ProviderRequestError('AI_REQUEST_CANCELLED', 499, '客户端已取消本次生成。');
+}
+
+function createInvalidResponseError() {
+  return new ProviderRequestError('AI_INVALID_RESPONSE', 502, '模型服务返回了无法解析的响应。');
+}
+
+function createEmptyResponseError() {
+  return new ProviderRequestError('AI_EMPTY_RESPONSE', 502, '模型服务未返回可用文本。');
+}
+
+function normalizeUsage(usage) {
+  if (!usage || typeof usage !== 'object' || Array.isArray(usage)) return null;
+  const readCount = (...values) => {
+    for (const value of values) {
+      if (Number.isSafeInteger(value) && value >= 0) return value;
+    }
+    return null;
+  };
+  const normalized = {
+    inputTokens: readCount(usage.prompt_tokens, usage.input_tokens),
+    outputTokens: readCount(usage.completion_tokens, usage.output_tokens),
+    totalTokens: readCount(usage.total_tokens),
+  };
+  return Object.values(normalized).some((value) => value !== null) ? normalized : null;
+}
+
+function reportUsage(onUsage, payload) {
+  if (typeof onUsage !== 'function') return;
+  const usage = normalizeUsage(payload?.usage);
+  if (usage) onUsage(usage);
+}
+
+async function readJsonResponse(response) {
+  try {
+    return await response.json();
+  } catch {
+    throw createInvalidResponseError();
+  }
 }
 
 async function withProviderRequest(messages, stream, externalSignal, consume, options = {}) {
   const model = resolveModel(options.modelId);
   if (!model) throw new ProviderNotConfiguredError();
+  if (externalSignal?.aborted) throw createCancelledError();
 
   const controller = new AbortController();
   let timedOut = false;
@@ -46,8 +95,7 @@ async function withProviderRequest(messages, stream, externalSignal, consume, op
   }, config.aiTimeoutMs);
   const abortExternal = () => controller.abort();
 
-  if (externalSignal?.aborted) abortExternal();
-  else externalSignal?.addEventListener('abort', abortExternal, { once: true });
+  if (externalSignal) externalSignal.addEventListener('abort', abortExternal, { once: true });
 
   try {
     const response = await fetch(model.baseUrl + '/chat/completions', {
@@ -61,13 +109,15 @@ async function withProviderRequest(messages, stream, externalSignal, consume, op
       signal: controller.signal,
     });
 
-    if (!response.ok) throw createProviderError(response.status);
-    return await consume(response);
+    if (!response.ok) throw createProviderHttpError(response.status);
+    return await consume(response, (payload) => reportUsage(options.onUsage, payload));
   } catch (error) {
+    if (error instanceof ProviderRequestError) throw error;
     if (timedOut) throw createTimeoutError();
     if (externalSignal?.aborted) throw createCancelledError();
     if (error?.name === 'AbortError') throw createTimeoutError();
-    throw error;
+    throw new ProviderRequestError('AI_PROVIDER_UNREACHABLE', 502,
+      '无法连接模型服务，请检查服务器网络和 Provider 地址。', { retryable: true });
   } finally {
     clearTimeout(timeout);
     externalSignal?.removeEventListener('abort', abortExternal);
@@ -83,40 +133,30 @@ export class ProviderNotConfiguredError extends Error {
 }
 
 export async function createAssistantReply(messages, options = {}) {
-  return withProviderRequest(messages, false, options.signal, async (response) => {
-    const data = await response.json().catch(() => ({}));
+  return withProviderRequest(messages, false, options.signal, async (response, onUsage) => {
+    const data = await readJsonResponse(response);
+    onUsage(data);
     const content = data?.choices?.[0]?.message?.content;
-    if (typeof content !== 'string' || !content.trim()) {
-      const error = new Error('模型服务未返回可用文本。');
-      error.code = 'AI_EMPTY_RESPONSE';
-      error.status = 502;
-      throw error;
-    }
+    if (typeof content !== 'string' || !content.trim()) throw createEmptyResponseError();
     return content.trim();
   }, options);
 }
 
 export async function streamAssistantReply(messages, options = {}) {
   const onDelta = typeof options.onDelta === 'function' ? options.onDelta : () => {};
-  return withProviderRequest(messages, true, options.signal, async (response) => {
+  return withProviderRequest(messages, true, options.signal, async (response, onUsage) => {
     const contentType = response.headers.get('content-type') || '';
     if (!contentType.toLowerCase().includes('text/event-stream')) {
-      const data = await response.json().catch(() => ({}));
+      const data = await readJsonResponse(response);
+      onUsage(data);
       const content = data?.choices?.[0]?.message?.content;
-      if (typeof content !== 'string' || !content.trim()) {
-        const error = new Error('模型服务未返回可用文本。');
-        error.code = 'AI_EMPTY_RESPONSE';
-        error.status = 502;
-        throw error;
-      }
+      if (typeof content !== 'string' || !content.trim()) throw createEmptyResponseError();
       onDelta(content);
       return content;
     }
+
     if (!response.body) {
-      const error = new Error('模型服务未提供可读取的流式响应。');
-      error.code = 'AI_STREAM_UNSUPPORTED';
-      error.status = 502;
-      throw error;
+      throw new ProviderRequestError('AI_INVALID_STREAM', 502, '模型服务没有提供可读取的流式响应。');
     }
 
     const reader = response.body.getReader();
@@ -137,17 +177,12 @@ export async function streamAssistantReply(messages, options = {}) {
       try {
         payload = JSON.parse(data);
       } catch {
-        const error = new Error('模型服务返回了无法解析的流式数据。');
-        error.code = 'AI_INVALID_STREAM';
-        error.status = 502;
-        throw error;
+        throw new ProviderRequestError('AI_INVALID_STREAM', 502, '模型服务返回了无法解析的流式数据。');
       }
 
+      onUsage(payload);
       if (payload?.error) {
-        const error = new Error('模型服务在生成过程中返回错误。');
-        error.code = 'AI_PROVIDER_STREAM_ERROR';
-        error.status = 502;
-        throw error;
+        throw new ProviderRequestError('AI_PROVIDER_STREAM_ERROR', 502, '模型服务在生成过程中返回错误。');
       }
 
       const rawDelta = payload?.choices?.[0]?.delta?.content;
@@ -185,12 +220,7 @@ export async function streamAssistantReply(messages, options = {}) {
       reader.releaseLock();
     }
 
-    if (!content.trim()) {
-      const error = new Error('模型服务未返回可用文本。');
-      error.code = 'AI_EMPTY_RESPONSE';
-      error.status = 502;
-      throw error;
-    }
+    if (!content.trim()) throw createEmptyResponseError();
     return content;
   }, options);
 }
