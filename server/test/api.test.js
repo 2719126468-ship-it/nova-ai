@@ -765,7 +765,7 @@ test('model context budget keeps the newest complete turn and preserves current 
     assert.match(response.body, /"modelContextWindowSource":"environment_configured"/);
     assert.match(response.body, /"tokenEstimateSource":"tokenizer_estimate"/);
     assert.match(response.body, /"historyTruncated":true/);
-    assert.match(response.body, /"currentMessagePreserved":true/);
+    assert.match(response.body, /"currentMessagePreserved":true,"outputReserveTokens":128,"outputLimitEnforced":true/);
     assert.equal(providerRequest.max_completion_tokens, 128);
     assert.equal(Object.hasOwn(providerRequest, 'max_tokens'), false);
     assert.equal(Object.hasOwn(providerRequest, 'temperature'), false);
@@ -1822,7 +1822,7 @@ test('admin provider management encrypts secrets, enforces role boundaries, and 
       receivedAuthorization = incoming.headers.authorization || null;
       if (incoming.method === 'GET' && incoming.url === '/v1/models') {
         outgoing.writeHead(200, { 'Content-Type': 'application/json' });
-        outgoing.end(JSON.stringify({ data: [{ id: 'managed-chat', context_length: 98304 }] }));
+        outgoing.end(JSON.stringify({ data: [{ id: 'managed-chat', context_length: '98304' }] }));
         return;
       }
       outgoing.writeHead(404, { 'Content-Type': 'application/json' });
@@ -1837,7 +1837,7 @@ test('admin provider management encrypts secrets, enforces role boundaries, and 
       baseUrl: 'http://127.0.0.1:' + adminProviderServer.address().port + '/v1',
       apiKey: secret,
       enabled: true,
-      models: [{ id: 'managed-chat', name: 'Managed Chat', contextLimit: 65536, tokenizer: 'o200k_base' }],
+      models: [{ id: 'managed-chat', name: 'Managed Chat', contextLimit: 65536, tokenizer: 'o200k_base', maxTokensParameter: 'max_completion_tokens' }],
     }).expect(201);
     assert.equal(created.body.providers.some((provider) => provider.id === 'managed-test' && provider.hasApiKey), true);
 
@@ -1858,6 +1858,7 @@ test('admin provider management encrypts secrets, enforces role boundaries, and 
     assert.equal(model.contextLimitSource, 'admin_configured');
     assert.equal(model.tokenizer, 'o200k_base');
     assert.equal(model.tokenizerSource, 'admin_configured');
+    assert.equal(model.maxTokensParameter, 'max_completion_tokens');
     assert.equal(JSON.stringify(catalog.body).includes(secret), false);
     assert.equal(JSON.stringify(catalog.body).includes('api_key_encrypted'), false);
 
