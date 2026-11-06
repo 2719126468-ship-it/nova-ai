@@ -4,6 +4,7 @@ import { decryptProviderSecret } from './provider-secrets.js';
 
 const PROVIDER_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
 const SUPPORTED_TOKENIZERS = new Set(['auto', 'cl100k_base', 'o200k_base', 'none']);
+const SUPPORTED_MAX_TOKENS_PARAMETERS = new Set(['auto', 'max_tokens', 'max_completion_tokens', 'none']);
 
 function parseProviderConfig(raw) {
   try {
@@ -55,6 +56,7 @@ function normalizeProvider(provider, source = 'environment_configured') {
         : ['chat', 'text'],
       contextLimit: Number.isSafeInteger(model.contextLimit) && model.contextLimit > 0 ? model.contextLimit : null,
       tokenizer: typeof model.tokenizer === 'string' && SUPPORTED_TOKENIZERS.has(model.tokenizer) ? model.tokenizer : 'auto',
+      maxTokensParameter: typeof model.maxTokensParameter === 'string' && SUPPORTED_MAX_TOKENS_PARAMETERS.has(model.maxTokensParameter) ? model.maxTokensParameter : 'auto',
     });
   }
 
@@ -180,6 +182,7 @@ function buildCatalog(privateProviders, configurationError) {
       : (model.contextLimit ? (provider.source === 'admin_configured' ? 'admin_configured' : 'environment_configured') : 'unknown'),
     contextLimitCheckedAt: reportedWindows.get(provider.id + ':' + model.upstreamModelId)?.checked_at || null,
     tokenizer: model.tokenizer || 'auto',
+    maxTokensParameter: model.maxTokensParameter || 'auto',
     tokenizerSource: model.tokenizer && model.tokenizer !== 'auto' && model.tokenizer !== 'none'
       ? 'admin_configured'
       : (model.tokenizer === 'none' ? 'unknown' : 'automatic'),
