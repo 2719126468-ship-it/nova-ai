@@ -1553,6 +1553,15 @@ test('administrator usage endpoint returns stored records and provider-reported 
   }).expect(201);
   const adminUser = db.prepare('SELECT id FROM users WHERE email=?').get('usage-admin@example.com');
   db.prepare("UPDATE users SET role='admin' WHERE id=?").run(adminUser.id);
+  const baseline = db.prepare(`
+    SELECT COUNT(*) AS requests,
+      SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END) AS succeeded,
+      SUM(CASE WHEN usage_source='provider' THEN 1 ELSE 0 END) AS providerReportedRequests,
+      COALESCE(SUM(input_tokens),0) AS reportedInputTokens,
+      COALESCE(SUM(output_tokens),0) AS reportedOutputTokens,
+      COALESCE(SUM(total_tokens),0) AS reportedTotalTokens
+    FROM ai_usage
+  `).get();
   db.prepare("INSERT INTO ai_usage (request_id,user_id,provider_id,model_id,operation,status,duration_ms,input_tokens,output_tokens,total_tokens,usage_source,completed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)")
     .run('admin-usage-record', adminUser.id, 'provider-a', 'provider-a:model-a', 'stream', 'succeeded', 120, 10, 5, 15, 'provider');
   db.prepare("INSERT INTO ai_usage (request_id,user_id,provider_id,model_id,operation,status,duration_ms) VALUES (?,?,?,?,?,?,?)")
@@ -1561,12 +1570,12 @@ test('administrator usage endpoint returns stored records and provider-reported 
   await admin.post('/api/v1/auth/login').set(originHeaders)
     .send({ email: 'usage-admin@example.com', password: 'usage-admin-password-strong' }).expect(200);
   const report = await admin.get('/api/v1/admin/usage?limit=10').expect(200);
-  assert.equal(report.body.summary.requests, 2);
-  assert.equal(report.body.summary.succeeded, 2);
-  assert.equal(report.body.summary.providerReportedRequests, 1);
-  assert.equal(report.body.summary.reportedInputTokens, 10);
-  assert.equal(report.body.summary.reportedOutputTokens, 5);
-  assert.equal(report.body.summary.reportedTotalTokens, 15);
+  assert.equal(report.body.summary.requests, baseline.requests + 2);
+  assert.equal(report.body.summary.succeeded, baseline.succeeded + 2);
+  assert.equal(report.body.summary.providerReportedRequests, baseline.providerReportedRequests + 1);
+  assert.equal(report.body.summary.reportedInputTokens, baseline.reportedInputTokens + 10);
+  assert.equal(report.body.summary.reportedOutputTokens, baseline.reportedOutputTokens + 5);
+  assert.equal(report.body.summary.reportedTotalTokens, baseline.reportedTotalTokens + 15);
   assert.ok(report.body.records.every((record) => !Object.hasOwn(record, 'content')));
   const unknown = report.body.records.find((record) => record.request_id === 'admin-usage-unknown');
   assert.equal(unknown.total_tokens, null);
