@@ -97,6 +97,19 @@ export async function createAssistantReply(messages, options = {}) {
 export async function streamAssistantReply(messages, options = {}) {
   const onDelta = typeof options.onDelta === 'function' ? options.onDelta : () => {};
   return withProviderRequest(messages, true, options.signal, async (response) => {
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.toLowerCase().includes('text/event-stream')) {
+      const data = await response.json().catch(() => ({}));
+      const content = data?.choices?.[0]?.message?.content;
+      if (typeof content !== 'string' || !content.trim()) {
+        const error = new Error('模型服务未返回可用文本。');
+        error.code = 'AI_EMPTY_RESPONSE';
+        error.status = 502;
+        throw error;
+      }
+      onDelta(content);
+      return content;
+    }
     if (!response.body) {
       const error = new Error('模型服务未提供可读取的流式响应。');
       error.code = 'AI_STREAM_UNSUPPORTED';

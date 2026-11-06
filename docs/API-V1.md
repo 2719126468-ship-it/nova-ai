@@ -17,7 +17,7 @@ Returns API health and whether the server has a complete AI provider configurati
 
 ### GET /api/v1/models
 
-Returns the server-side model catalog. API keys are never returned.
+Returns the server-side model catalog. API keys are never returned. The top-level provider object reports configuration separately from upstream health; configured providers remain health: unknown until a real probe is implemented. The health endpoint also returns ai.status as configured_unverified or not_configured.
 
 A configured model has this shape:
 
@@ -97,6 +97,8 @@ The messages.status column is managed by a versioned SQLite migration:
 Only completed messages are sent as prior conversation context. Failed or cancelled partial responses are not silently replayed as if they were complete.
 
 ### Cancellation
+
+Some OpenAI-compatible services ignore stream: true and return a normal JSON completion. NOVA relays that single completion as one message_delta, then emits message_complete so compatible deployments can still finish a response.
 
 Clients should use AbortController to cancel the streaming fetch when the user presses Stop or leaves the active stream. The server listens for the response connection closing and aborts the upstream provider request. The pending assistant message is marked cancelled and any received partial content is saved.
 

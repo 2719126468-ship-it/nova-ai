@@ -51,6 +51,7 @@ test('health endpoint reports AI adapter as unconfigured without credentials', a
   assert.equal(response.status, 200);
   assert.equal(response.body.status, 'ok');
   assert.equal(response.body.ai.configured, false);
+  assert.equal(response.body.ai.status, 'not_configured');
 });
 
 test('registration creates an account and an HttpOnly session cookie', async () => {
@@ -155,6 +156,12 @@ test('SSE chat streams deltas and persists the completed assistant message', asy
   config.aiModel = 'mock-chat-model';
 
   try {
+    const catalog = await request(app).get('/api/v1/models').expect(200);
+    assert.equal(catalog.provider.configured, true);
+    assert.equal(catalog.provider.status, 'configured_unverified');
+    assert.equal(catalog.provider.health, 'unknown');
+    assert.equal(catalog.models[0].status, 'unknown');
+    assert.equal(catalog.models[0].selectable, true);
     const agent = request.agent(app);
     await agent.post('/api/v1/auth/login').set(originHeaders)
       .send({ email: 'test@example.com', password: 'a-strong-test-password' }).expect(200);
@@ -191,6 +198,65 @@ test('SSE chat streams deltas and persists the completed assistant message', asy
     assert.equal(messages[1].content, 'Hello from NOVA');
     assert.equal(messages[1].status, 'complete');
     assert.equal(messages[1].error_code, null);
+  } finally {
+    config.aiBaseUrl = previous.aiBaseUrl;
+    config.aiApiKey = previous.aiApiKey;
+    config.aiModel = previous.aiModel;
+    await new Promise((resolve) => providerServer.close(resolve));
+    providerServer = null;
+  }
+});
+
+
+test('stream endpoint falls back to a complete JSON response when the provider ignores stream mode', async () => {
+  providerServer = createServer((incoming, outgoing) => {
+    let body = '';
+    incoming.setEncoding('utf8');
+    incoming.on('data', (chunk) => { body += chunk; });
+    incoming.on('end', () => {
+      const payload = JSON.parse(body);
+      assert.equal(payload.stream, true);
+      outgoing.writeHead(200, { 'Content-Type': 'application/json' });
+      outgoing.end(JSON.stringify({ choices: [{ message: { content: 'JSON fallback response' } }] }));
+    });
+  });
+  await new Promise((resolve) => providerServer.listen(0, '127.0.0.1', resolve));
+  const previous = {
+    aiBaseUrl: config.aiBaseUrl,
+    aiApiKey: config.aiApiKey,
+    aiModel: config.aiModel,
+  };
+  config.aiBaseUrl = 'http://127.0.0.1:' + providerServer.address().port + '/v1';
+  config.aiApiKey = 'test-only-secret-key';
+  config.aiModel = 'mock-json-model';
+
+  try {
+    const agent = request.agent(app);
+    await agent.post('/api/v1/auth/login').set(originHeaders)
+      .send({ email: 'test@example.com', password: 'a-strong-test-password' }).expect(200);
+    const created = await agent.post('/api/v1/conversations').set(originHeaders)
+      .send({ title: 'JSON fallback' }).expect(201);
+    const response = await agent.post('/api/v1/conversations/' + created.body.conversation.id + '/messages/stream')
+      .set(originHeaders)
+      .set('Accept', 'text/event-stream')
+      .send({ content: 'Try JSON fallback' })
+      .buffer(true)
+      .parse((incoming, callback) => {
+        let body = '';
+        incoming.setEncoding('utf8');
+        incoming.on('data', (chunk) => { body += chunk; });
+        incoming.on('end', () => callback(null, body));
+        incoming.on('error', callback);
+      })
+      .expect(200);
+
+    assert.match(response.body, /event: message_delta/);
+    assert.match(response.body, /JSON fallback response/);
+    assert.match(response.body, /event: message_complete/);
+    const saved = db.prepare(
+      "SELECT content,status FROM messages WHERE conversation_id=? AND role='assistant'",
+    ).get(created.body.conversation.id);
+    assert.deepEqual(saved, { content: 'JSON fallback response', status: 'complete' });
   } finally {
     config.aiBaseUrl = previous.aiBaseUrl;
     config.aiApiKey = previous.aiApiKey;

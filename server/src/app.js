@@ -16,6 +16,7 @@ function getModelCatalog() {
     return {
       configured: false,
       defaultModelId: null,
+      provider: { id: 'openai-compatible', name: 'OpenAI-compatible provider', configured: false, health: 'unknown', status: 'not_configured' },
       models: [],
       note: '尚未配置模型服务。模型密钥只从服务端环境变量读取。',
     };
@@ -24,6 +25,7 @@ function getModelCatalog() {
   return {
     configured: true,
     defaultModelId: config.aiModel,
+    provider: { id: 'openai-compatible', name: 'OpenAI-compatible provider', configured: true, health: 'unknown', status: 'configured_unverified' },
     models: [{
       id: config.aiModel,
       name: config.aiModel,
@@ -82,6 +84,7 @@ export function createApp() {
     version: '0.1.0',
     ai: {
       configured: config.aiConfigured,
+      status: config.aiConfigured ? 'configured_unverified' : 'not_configured',
       provider: config.aiConfigured ? 'openai-compatible' : null,
       model: config.aiConfigured ? config.aiModel : null,
     },
