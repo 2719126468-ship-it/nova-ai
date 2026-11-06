@@ -33,7 +33,35 @@ const migrations = [
       `);
     },
   },
+,
 
+  {
+    version: 3,
+    name: 'persistent-ai-usage-records',
+    up(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS ai_usage (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          request_id TEXT NOT NULL UNIQUE,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          provider_id TEXT NOT NULL,
+          model_id TEXT NOT NULL,
+          operation TEXT NOT NULL CHECK(operation IN ('chat','stream','edit','retry')),
+          status TEXT NOT NULL CHECK(status IN ('in_progress','succeeded','failed','cancelled')),
+          error_code TEXT,
+          duration_ms INTEGER CHECK(duration_ms IS NULL OR duration_ms >= 0),
+          input_tokens INTEGER CHECK(input_tokens IS NULL OR input_tokens >= 0),
+          output_tokens INTEGER CHECK(output_tokens IS NULL OR output_tokens >= 0),
+          total_tokens INTEGER CHECK(total_tokens IS NULL OR total_tokens >= 0),
+          usage_source TEXT CHECK(usage_source IS NULL OR usage_source = 'provider'),
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          completed_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_usage_user_created ON ai_usage(user_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_ai_usage_status_created ON ai_usage(status, created_at DESC);
+      `);
+    },
+  },
 ];
 
 export function runMigrations(database) {
