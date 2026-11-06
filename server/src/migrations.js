@@ -33,7 +33,6 @@ const migrations = [
       `);
     },
   },
-,
 
   {
     version: 3,
