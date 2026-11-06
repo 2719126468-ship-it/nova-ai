@@ -34,9 +34,11 @@ function getModelCatalog() {
     providers: registry.providers,
     models: registry.models,
     contextPolicy: {
-      unit: 'characters',
       maxMessageContentCharacters: config.aiMaxContextChars,
-      tokenLimit: null,
+      outputReserveTokens: config.aiContextOutputReserve,
+      safetyMarginPercent: config.aiContextSafetyMarginPercent,
+      mode: 'per_model',
+      note: '模型上下文上限和输入 Token 数会分别标注来源；字符预算始终作为额外硬限制。',
     },
     configurationError: registry.configurationError,
     note: registry.configured
