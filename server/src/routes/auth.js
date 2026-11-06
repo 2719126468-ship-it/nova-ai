@@ -96,6 +96,11 @@ router.get('/export', requireAuth, (req, res, next) => {
       SELECT id,slug,title,category,summary,body,status,published_at,created_at,updated_at
       FROM articles WHERE author_id=? ORDER BY id
     `).all(userId);
+    const usage = db.prepare(`
+      SELECT request_id,provider_id,model_id,operation,status,error_code,duration_ms,
+        input_tokens,output_tokens,total_tokens,usage_source,created_at,completed_at
+      FROM ai_usage WHERE user_id=? ORDER BY id
+    `).all(userId);
 
     res.set({
       'Cache-Control': 'no-store',
@@ -103,7 +108,7 @@ router.get('/export', requireAuth, (req, res, next) => {
       'Content-Disposition': 'attachment; filename="nova-account-export-' + userId + '.json"',
     });
     res.json({
-      schemaVersion: 1,
+      schemaVersion: 2,
       exportedAt: new Date().toISOString(),
       account,
       projects,
