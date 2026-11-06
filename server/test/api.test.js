@@ -1748,7 +1748,7 @@ test('admin provider management encrypts secrets, enforces role boundaries, and 
       receivedAuthorization = incoming.headers.authorization || null;
       if (incoming.method === 'GET' && incoming.url === '/v1/models') {
         outgoing.writeHead(200, { 'Content-Type': 'application/json' });
-        outgoing.end(JSON.stringify({ data: [{ id: 'managed-chat' }] }));
+        outgoing.end(JSON.stringify({ data: [{ id: 'managed-chat', context_length: 98304 }] }));
         return;
       }
       outgoing.writeHead(404, { 'Content-Type': 'application/json' });
@@ -1763,7 +1763,7 @@ test('admin provider management encrypts secrets, enforces role boundaries, and 
       baseUrl: 'http://127.0.0.1:' + adminProviderServer.address().port + '/v1',
       apiKey: secret,
       enabled: true,
-      models: [{ id: 'managed-chat', name: 'Managed Chat', contextLimit: 65536 }],
+      models: [{ id: 'managed-chat', name: 'Managed Chat', contextLimit: 65536, tokenizer: 'o200k_base' }],
     }).expect(201);
     assert.equal(created.body.providers.some((provider) => provider.id === 'managed-test' && provider.hasApiKey), true);
 
@@ -1780,13 +1780,22 @@ test('admin provider management encrypts secrets, enforces role boundaries, and 
     const catalog = await request(app).get('/api/v1/models').expect(200);
     const model = catalog.body.models.find((item) => item.id === 'managed-test:managed-chat');
     assert.equal(model.selectable, true);
+    assert.equal(model.contextLimit, 65536);
+    assert.equal(model.contextLimitSource, 'admin_configured');
+    assert.equal(model.tokenizer, 'o200k_base');
+    assert.equal(model.tokenizerSource, 'admin_configured');
     assert.equal(JSON.stringify(catalog.body).includes(secret), false);
     assert.equal(JSON.stringify(catalog.body).includes('api_key_encrypted'), false);
 
     const health = await admin.post('/api/v1/models/health').set(originHeaders)
       .send({ modelId: 'managed-test:managed-chat' }).expect(200);
     assert.equal(health.body.status, 'healthy');
+    assert.deepEqual(health.body.contextWindow, { tokens: 98304, source: 'provider_reported', checkedAt: health.body.contextWindow.checkedAt });
     assert.equal(receivedAuthorization, 'Bearer ' + secret);
+    const refreshedCatalog = await request(app).get('/api/v1/models').expect(200);
+    const refreshedModel = refreshedCatalog.body.models.find((item) => item.id === 'managed-test:managed-chat');
+    assert.equal(refreshedModel.contextLimit, 98304);
+    assert.equal(refreshedModel.contextLimitSource, 'provider_reported');
 
     const defaultModel = await admin.put('/api/v1/admin/model-default').set(originHeaders)
       .send({ defaultModelId: 'managed-test:managed-chat' }).expect(200);
