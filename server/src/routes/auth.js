@@ -116,6 +116,7 @@ router.get('/export', requireAuth, (req, res, next) => {
       messages,
       projectConversationLinks,
       authoredArticles,
+      usage,
       excluded: ['password hashes', 'session tokens and hashes', 'provider API keys'],
     });
   } catch (error) {
