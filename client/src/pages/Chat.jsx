@@ -39,7 +39,7 @@ function describeContextPolicy(policy) {
   if (Number.isFinite(policy.inputTokenBudget)) {
     parts.push('输入预算 ' + policy.inputTokenBudget.toLocaleString());
   }
-  if (policy.outputReserveTokens) parts.push('回复预留 ' + policy.outputReserveTokens.toLocaleString());
+  if (Number.isFinite(policy.outputReserveTokens)) parts.push((policy.outputLimitEnforced === false ? '回复空间预留' : '回复上限') + ' ' + policy.outputReserveTokens.toLocaleString() + (policy.outputLimitEnforced === false ? '（未向上游提交硬限制）' : '（已提交上游）'));
   return parts.join(' · ');
 }
 
