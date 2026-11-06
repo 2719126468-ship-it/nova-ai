@@ -35,7 +35,7 @@ function createSession(userId) {
 router.post('/register', async (req, res, next) => {
   try {
     const parsed = registerSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: 'VALIDATION_ERROR', message: '请填写有效邮箱、姓名和至少 10 位密码。', details: parsed.error.flatten() });
+    if (!parsed.success) return res.status(400).json({ error: 'VALIDATION_ERROR', message: '请填写有效邮箱、姓名和至少 10 位密码。', details: z.flattenError(parsed.error) });
     const { email, password, name } = parsed.data;
     const existing = db.prepare('SELECT id FROM users WHERE email=?').get(email.toLowerCase());
     if (existing) return res.status(409).json({ error: 'EMAIL_EXISTS', message: '该邮箱已注册。' });

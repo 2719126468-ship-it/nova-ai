@@ -25,7 +25,7 @@ router.get('/:slug', (req, res) => {
 });
 router.post('/', requireAuth, requireAdmin, (req, res) => {
   const parsed = articleSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'VALIDATION_ERROR', message: '文章字段不完整或格式不正确。', details: parsed.error.flatten() });
+  if (!parsed.success) return res.status(400).json({ error: 'VALIDATION_ERROR', message: '文章字段不完整或格式不正确。', details: z.flattenError(parsed.error) });
   try {
     const { slug, title, category, summary, body, status } = parsed.data;
     const result = db.prepare(`INSERT INTO articles(slug,title,category,summary,body,status,author_id,published_at)

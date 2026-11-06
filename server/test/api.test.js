@@ -265,3 +265,15 @@ test('stream endpoint falls back to a complete JSON response when the provider i
     providerServer = null;
   }
 });
+
+
+test('Zod 4 validation errors retain structured field details', async () => {
+  const response = await request(app).post('/api/v1/auth/register').set(originHeaders)
+    .send({ email: 'not-an-email', name: '', password: 'short' })
+    .expect(400);
+  assert.equal(response.body.error, 'VALIDATION_ERROR');
+  assert.ok(Array.isArray(response.body.details.formErrors));
+  assert.ok(Array.isArray(response.body.details.fieldErrors.email));
+  assert.ok(Array.isArray(response.body.details.fieldErrors.password));
+  assert.ok(Array.isArray(response.body.details.fieldErrors.name));
+});
