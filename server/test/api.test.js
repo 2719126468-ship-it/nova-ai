@@ -468,16 +468,6 @@ test('upstream authentication, rate-limit, server, and empty-stream failures are
   config.aiModel = 'mock-error-model';
 
   try {
-    const agent = request.agent(app);
-    await agent.post('/api/v1/auth/register').set(originHeaders).send({
-      email: 'provider-errors@example.com',
-      name: 'Provider Error Tester',
-      password: 'provider-error-password-strong',
-    }).expect(201);
-    const created = await agent.post('/api/v1/conversations').set(originHeaders)
-      .send({ title: 'Provider errors' }).expect(201);
-    const id = created.body.conversation.id;
-    const url = '/api/v1/conversations/' + id + '/messages/stream';
     const cases = [
       ['provider-401', 'AI_PROVIDER_AUTH_FAILED'],
       ['provider-403', 'AI_PROVIDER_AUTH_FAILED'],
@@ -490,7 +480,19 @@ test('upstream authentication, rate-limit, server, and empty-stream failures are
       ['provider-network-error', 'AI_PROVIDER_UNREACHABLE'],
     ];
 
-    for (const [prompt, code] of cases) {
+    for (let index = 0; index < cases.length; index += 1) {
+      const [prompt, code] = cases[index];
+      const email = 'provider-errors-' + index + '@example.com';
+      const agent = request.agent(app);
+      await agent.post('/api/v1/auth/register').set(originHeaders).send({
+        email,
+        name: 'Provider Error Tester ' + index,
+        password: 'provider-error-password-strong',
+      }).expect(201);
+      const created = await agent.post('/api/v1/conversations').set(originHeaders)
+        .send({ title: 'Provider errors' }).expect(201);
+      const id = created.body.conversation.id;
+      const url = '/api/v1/conversations/' + id + '/messages/stream';
       const response = await agent.post(url).set(originHeaders)
         .send({ content: prompt })
         .buffer(true)
@@ -516,7 +518,7 @@ test('upstream authentication, rate-limit, server, and empty-stream failures are
       assert.deepEqual(saved, { status: 'failed', error_code: code });
       const usage = db.prepare(
         'SELECT status,error_code,usage_source,input_tokens FROM ai_usage WHERE user_id=(SELECT id FROM users WHERE email=?) ORDER BY id DESC LIMIT 1',
-      ).get('provider-errors@example.com');
+      ).get(email);
       assert.equal(usage.status, 'failed');
       assert.equal(usage.error_code, code);
       assert.equal(usage.usage_source, null);
