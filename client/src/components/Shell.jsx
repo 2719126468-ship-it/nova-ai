@@ -10,6 +10,7 @@ const links = [
   { to: '/research', label: '研究' },
   { to: '/studio', label: 'Studio' },
   { to: '/documents', label: '文档' },
+  { to: '/project-context', label: '项目资料' },
   { to: '/models', label: '模型' },
   { to: '/developers', label: '开发者' },
 ];
@@ -19,7 +20,7 @@ export default function Shell() {
   const { user } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const location = useLocation();
-  const isProductApp = ['/chat', '/studio', '/documents', '/account', '/admin'].some((prefix) => location.pathname.startsWith(prefix));
+  const isProductApp = ['/chat', '/studio', '/documents', '/project-context', '/account', '/admin'].some((prefix) => location.pathname.startsWith(prefix));
   return <div className="app-shell">
     <header className={`site-header ${isProductApp ? 'site-header-product' : ''}`}>
       <div className="header-inner">
