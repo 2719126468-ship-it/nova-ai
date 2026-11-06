@@ -73,3 +73,108 @@
 .chat-model-select:disabled { opacity: .65; cursor: default; }
 .chat-model-select option { color: #17181c; background: #fff; }
 @media (max-width: 520px) { .chat-model-select { max-width: 145px; } .chat-model-badge { gap: 5px; } }
+
+
+/* Markdown fenced-code blocks: language label and per-block copy action. */
+.chat-message .markdown-code-block {
+  margin: 14px 0 18px;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--code-bg);
+  text-align: left;
+}
+.markdown-code-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+  padding: 5px 9px 5px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-soft);
+}
+.markdown-code-language {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .9px;
+  line-height: 1.4;
+}
+.markdown-code-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 25px;
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1;
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+.markdown-code-copy:hover { color: var(--ink); border-color: var(--line-strong); }
+.markdown-code-copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.markdown-code-block pre {
+  margin: 0;
+  padding: 13px 14px;
+  overflow-x: auto;
+  background: var(--code-bg);
+  color: var(--ink);
+  tab-size: 2;
+  -webkit-overflow-scrolling: touch;
+}
+.markdown-code-block pre code {
+  display: block;
+  min-width: max-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-size: 10px;
+  line-height: 1.75;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.markdown-code-block .hljs-comment,
+.markdown-code-block .hljs-quote { color: var(--code-comment); font-style: italic; }
+.markdown-code-block .hljs-keyword,
+.markdown-code-block .hljs-selector-tag,
+.markdown-code-block .hljs-meta .hljs-keyword { color: var(--code-keyword); font-weight: 600; }
+.markdown-code-block .hljs-string,
+.markdown-code-block .hljs-doctag,
+.markdown-code-block .hljs-regexp,
+.markdown-code-block .hljs-template-tag { color: var(--code-string); }
+.markdown-code-block .hljs-number,
+.markdown-code-block .hljs-literal,
+.markdown-code-block .hljs-symbol,
+.markdown-code-block .hljs-bullet { color: var(--code-number); }
+.markdown-code-block .hljs-title,
+.markdown-code-block .hljs-title.function_,
+.markdown-code-block .hljs-function .hljs-title { color: var(--code-function); }
+.markdown-code-block .hljs-built_in,
+.markdown-code-block .hljs-type,
+.markdown-code-block .hljs-class .hljs-title { color: var(--code-title); }
+.markdown-code-block .hljs-attr,
+.markdown-code-block .hljs-attribute,
+.markdown-code-block .hljs-property,
+.markdown-code-block .hljs-selector-class,
+.markdown-code-block .hljs-selector-id { color: var(--code-attribute); }
+.markdown-code-block .hljs-operator,
+.markdown-code-block .hljs-punctuation,
+.markdown-code-block .hljs-params { color: var(--code-operator); }
+.markdown-code-block .hljs-variable,
+.markdown-code-block .hljs-name,
+.markdown-code-block .hljs-tag { color: var(--ink); }
+@media (max-width: 520px) {
+  .markdown-code-block pre { padding: 12px; }
+  .markdown-code-block pre code { font-size: 9px; }
+  .markdown-code-copy { min-width: 30px; }
+  .markdown-code-copy span { display: none; }
+}
+
