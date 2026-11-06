@@ -1791,6 +1791,13 @@ test('account export includes owned work but excludes password and session crede
     content: '# Account document',
     projectId: project.body.project.id,
   }).expect(201);
+  await agent.put('/api/v1/projects/' + project.body.project.id + '/context').set(originHeaders)
+    .send({ instructions: 'Use the exported project instructions.', expectedVersion: 1 }).expect(200);
+  const exportedProjectFileBytes = Buffer.from('# Exported project file\n');
+  const exportedProjectFile = await agent.post('/api/v1/projects/' + project.body.project.id + '/files')
+    .set(originHeaders).set('Content-Type', 'application/octet-stream')
+    .set('X-File-Name', encodeURIComponent('exported-reference.md'))
+    .send(exportedProjectFileBytes).expect(201);
   const conversation = await agent.post('/api/v1/conversations').set(originHeaders)
     .send({ title: 'Export conversation' }).expect(201);
   const exportedUserMessage = db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)')
@@ -1813,7 +1820,12 @@ test('account export includes owned work but excludes password and session crede
   assert.equal(response.body.account.email, 'account-export@example.com');
   assert.equal(response.body.projects.length, 1);
   assert.equal(response.body.projects[0].content, 'project notes');
-  assert.equal(response.body.schemaVersion, 5);
+  assert.equal(response.body.schemaVersion, 6);
+  assert.equal(response.body.projects[0].instructions, 'Use the exported project instructions.');
+  assert.equal(response.body.projects[0].instructionsVersion, 2);
+  assert.equal(response.body.projectFiles.length, 1);
+  assert.equal(response.body.projectFiles[0].id, exportedProjectFile.body.file.id);
+  assert.equal(response.body.projectFiles[0].contentBase64, exportedProjectFileBytes.toString('base64'));
   assert.equal(response.body.documents.length, 1);
   assert.equal(response.body.documents[0].id, exportedDocument.body.document.id);
   assert.equal(response.body.documents[0].content, '# Account document');
@@ -1845,6 +1857,11 @@ test('account deletion requires password and email confirmation then cascades pr
   }).expect(201);
   const project = await agent.post('/api/v1/projects').set(originHeaders)
     .send({ title: 'Delete project', description: '', content: 'delete me' }).expect(201);
+  const deleteProjectFileBytes = Buffer.from('# Delete this project file');
+  const deletedProjectFile = await agent.post('/api/v1/projects/' + project.body.project.id + '/files')
+    .set(originHeaders).set('Content-Type', 'application/octet-stream')
+    .set('X-File-Name', encodeURIComponent('delete-this.md'))
+    .send(deleteProjectFileBytes).expect(201);
   const deletedDocument = await agent.post('/api/v1/documents').set(originHeaders).send({
     title: 'Document to delete',
     content: 'Private content',
@@ -1887,6 +1904,7 @@ test('account deletion requires password and email confirmation then cascades pr
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM projects WHERE user_id=?').get(user.id).count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM documents WHERE user_id=?').get(user.id).count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM documents WHERE id=?').get(deletedDocument.body.document.id).count, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM project_files WHERE id=?').get(deletedProjectFile.body.file.id).count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM conversations WHERE user_id=?').get(user.id).count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM messages WHERE conversation_id=?').get(conversationId).count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM message_versions WHERE message_id=?').get(deletedAssistantMessage.lastInsertRowid).count, 0);
