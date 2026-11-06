@@ -233,7 +233,7 @@ test('database migrations add message lifecycle fields and are idempotent', () =
   assert.ok(documentColumns.has('title'));
   assert.ok(documentColumns.has('content'));
   assert.ok(documentColumns.has('version'));
-  const documentTriggers = new Set(db.prepare(\"SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='documents'\").all().map((row) => row.name));
+  const documentTriggers = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='documents'").all().map((row) => row.name));
   assert.ok(documentTriggers.has('documents_project_owner_insert'));
   assert.ok(documentTriggers.has('documents_project_owner_update'));
 });
