@@ -140,8 +140,25 @@ test('project context instructions and files enforce owner isolation, versioning
   const stored = db.prepare('SELECT extracted_text,include_in_context FROM project_files WHERE id=?').get(fileId);
   assert.equal(stored.extracted_text, markdown.toString('utf8'));
   assert.equal(stored.include_in_context, 1);
+
+  const contextConversation = await owner.post('/api/v1/conversations').set(originHeaders)
+    .send({ title: 'Project context integration' }).expect(201);
+  db.prepare('INSERT INTO project_conversations(project_id,conversation_id) VALUES(?,?)')
+    .run(projectId, contextConversation.body.conversation.id);
+  const ownerId = db.prepare('SELECT id FROM users WHERE email=?').get('project-files-owner@example.com').id;
+  const { readProjectPromptContext } = await import('../src/routes/conversations.js');
+  const includedContext = readProjectPromptContext(contextConversation.body.conversation.id, ownerId);
+  assert.ok(includedContext.message.content.includes('Prefer concise technical answers.'));
+  assert.ok(includedContext.message.content.includes('Selected file: project-notes.md'));
+  assert.ok(includedContext.message.content.includes('Only include this after the owner opts in.'));
+  assert.equal(includedContext.filesIncluded, 1);
+
   await owner.patch('/api/v1/projects/' + projectId + '/files/' + fileId)
     .set(originHeaders).send({ includeInContext: false }).expect(200);
+  const instructionsOnlyContext = readProjectPromptContext(contextConversation.body.conversation.id, ownerId);
+  assert.ok(instructionsOnlyContext.message.content.includes('Prefer concise technical answers.'));
+  assert.equal(instructionsOnlyContext.message.content.includes('Selected file: project-notes.md'), false);
+  assert.equal(instructionsOnlyContext.filesIncluded, 0);
 
   const downloaded = await owner.get('/api/v1/projects/' + projectId + '/files/' + fileId + '/download')
     .buffer(true).parse((incoming, callback) => {
