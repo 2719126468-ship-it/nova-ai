@@ -55,6 +55,16 @@ test('registration creates an account and an HttpOnly session cookie', async () 
   assert.ok(response.headers['set-cookie']?.some((cookie) => cookie.includes('HttpOnly')));
 });
 
+test('Zod validation keeps structured field errors on invalid registration', async () => {
+  const response = await request(app).post('/api/auth/register').set(originHeaders).send({
+    email: 'not-an-email', name: '', password: 'short',
+  });
+  assert.equal(response.status, 400);
+  assert.equal(response.body.error, 'VALIDATION_ERROR');
+  assert.ok(response.body.details?.fieldErrors);
+  assert.ok(response.body.details.fieldErrors.email?.length);
+});
+
 test('authenticated users can create, update and delete their own projects', async () => {
   const agent = request.agent(app);
   await agent.post('/api/auth/login').set(originHeaders).send({ email: 'test@example.com', password: 'a-strong-test-password' }).expect(200);

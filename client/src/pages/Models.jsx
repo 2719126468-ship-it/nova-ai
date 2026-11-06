@@ -25,7 +25,7 @@ export default function Models() {
             : '目前没有可用的模型配置。添加服务端 API 配置后，才能发起真实模型请求。'}</p>
         </div>
       </div>
-      <div className={'connection-state ' + (configured ? 'connected' : 'disconnected')}>
+      <div className={'connection-state ' + (configured ? 'configured' : 'disconnected')}>
         <CircleDashed size={15} />
         {configured ? 'CONFIGURED · UNVERIFIED' : 'NOT CONFIGURED'}
       </div>
