@@ -411,6 +411,9 @@ test('upstream authentication, rate-limit, server, and empty-stream failures are
       if (prompt.includes('provider-401')) {
         outgoing.writeHead(401, { 'Content-Type': 'application/json' });
         outgoing.end(JSON.stringify({ error: 'invalid upstream key' }));
+      } else if (prompt.includes('provider-403')) {
+        outgoing.writeHead(403, { 'Content-Type': 'application/json' });
+        outgoing.end(JSON.stringify({ error: 'upstream permission detail' }));
       } else if (prompt.includes('provider-429')) {
         outgoing.writeHead(429, { 'Content-Type': 'application/json' });
         outgoing.end(JSON.stringify({ error: 'upstream quota detail' }));
@@ -446,9 +449,11 @@ test('upstream authentication, rate-limit, server, and empty-stream failures are
     const url = '/api/v1/conversations/' + id + '/messages/stream';
     const cases = [
       ['provider-401', 'AI_PROVIDER_ERROR'],
+      ['provider-403', 'AI_PROVIDER_ERROR'],
       ['provider-429', 'AI_PROVIDER_RATE_LIMITED'],
       ['provider-503', 'AI_PROVIDER_UNAVAILABLE'],
       ['provider-empty', 'AI_EMPTY_RESPONSE'],
+      ['provider-malformed', 'AI_INVALID_STREAM'],
     ];
 
     for (const [prompt, code] of cases) {
@@ -468,6 +473,7 @@ test('upstream authentication, rate-limit, server, and empty-stream failures are
       assert.equal(response.body.includes('provider-test-secret'), false);
       assert.equal(response.body.includes('private upstream detail'), false);
       assert.equal(response.body.includes('upstream quota detail'), false);
+      assert.equal(response.body.includes('upstream permission detail'), false);
 
       const saved = db.prepare(
         "SELECT status,error_code FROM messages WHERE conversation_id=? AND role='assistant' ORDER BY id DESC LIMIT 1",
