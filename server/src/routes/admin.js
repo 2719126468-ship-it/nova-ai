@@ -13,6 +13,7 @@ const modelSchema = z.object({
   enabled: z.boolean().optional().default(true),
   capabilities: z.array(z.string().trim().min(1).max(40)).max(20).optional().default(['chat', 'text']),
   contextLimit: z.number().int().positive().max(10000000).nullable().optional().default(null),
+  tokenizer: z.enum(['auto', 'cl100k_base', 'o200k_base', 'none']).optional().default('auto'),
 });
 
 function addUniqueModelIds(models, ctx) {
@@ -64,6 +65,7 @@ function normalizeStoredModels(models) {
     enabled: model.enabled !== false,
     capabilities: [...new Set(model.capabilities || ['chat', 'text'])],
     contextLimit: model.contextLimit ?? null,
+    tokenizer: model.tokenizer || 'auto',
   }));
 }
 
