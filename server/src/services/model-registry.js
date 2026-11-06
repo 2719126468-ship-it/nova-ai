@@ -183,7 +183,6 @@ function buildCatalog(privateProviders, configurationError) {
     contextLimitCheckedAt: reportedWindows.get(provider.id + ':' + model.upstreamModelId)?.checked_at || null,
     tokenizer: model.tokenizer || 'auto',
     maxTokensParameter: model.maxTokensParameter || 'auto',
-    maxTokensParameter: model.maxTokensParameter || 'auto',
     tokenizerSource: model.tokenizer && model.tokenizer !== 'auto' && model.tokenizer !== 'none'
       ? 'admin_configured'
       : (model.tokenizer === 'none' ? 'unknown' : 'automatic'),
@@ -238,6 +237,7 @@ export function resolveModel(modelId) {
     contextLimit: selected.contextLimit,
     contextLimitSource: selected.contextLimitSource,
     tokenizer: model.tokenizer || 'auto',
+    maxTokensParameter: model.maxTokensParameter || 'auto',
     name: model.name,
   };
 }
