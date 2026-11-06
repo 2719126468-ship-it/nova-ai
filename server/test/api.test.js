@@ -724,9 +724,9 @@ test('model context budget keeps the newest complete turn and preserves current 
     baseUrl: 'http://127.0.0.1:' + providerServer.address().port + '/v1',
     apiKey: 'context-test-secret',
     enabled: true,
-    models: [{ id: 'gpt-4o-mini', contextLimit: 1024, tokenizer: 'auto' }],
+    models: [{ id: 'gpt-5-mini', contextLimit: 1024, tokenizer: 'auto' }],
   }]);
-  config.aiDefaultModelId = 'context-test:gpt-4o-mini';
+  config.aiDefaultModelId = 'context-test:gpt-5-mini';
   config.aiMaxContextChars = 30;
   config.aiContextOutputReserve = 128;
   config.aiContextSafetyMarginPercent = 10;
@@ -766,6 +766,9 @@ test('model context budget keeps the newest complete turn and preserves current 
     assert.match(response.body, /"tokenEstimateSource":"tokenizer_estimate"/);
     assert.match(response.body, /"historyTruncated":true/);
     assert.match(response.body, /"currentMessagePreserved":true/);
+    assert.equal(providerRequest.max_completion_tokens, 128);
+    assert.equal(Object.hasOwn(providerRequest, 'max_tokens'), false);
+    assert.equal(Object.hasOwn(providerRequest, 'temperature'), false);
     assert.deepEqual(
       providerRequest.messages.map((message) => [message.role, message.content]),
       [['user', 'recent-user'], ['assistant', 'recent-answer'], ['user', 'now']],
@@ -787,7 +790,7 @@ test('model context budget keeps the newest complete turn and preserves current 
       baseUrl: 'http://127.0.0.1:' + providerServer.address().port + '/v1',
       apiKey: 'context-test-secret',
       enabled: true,
-      models: [{ id: 'gpt-4o-mini', contextLimit: 256, tokenizer: 'auto' }],
+      models: [{ id: 'gpt-5-mini', contextLimit: 256, tokenizer: 'auto' }],
     }]);
     const tokenLimitedContent = '中文'.repeat(100);
     const tokenTooLarge = await agent.post('/api/v1/conversations/' + id + '/messages/stream')
