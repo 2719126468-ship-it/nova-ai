@@ -1,13 +1,13 @@
 # NOVA AI Development Tracker
 
 - Updated: 2026-11-07
-- Product stage: V0.1 core quality work → V0.2 AI Workspace
+- Product stage: V0.1 core quality work → V0.2 AI Workspace → V0.3 Research
 - Repository baseline: `main`
 - Package version: keep `0.1.0` until release acceptance; do not bump for planning milestones.
 
 ## Progress
 
-**10 / 12 complete** · 0 in progress · 2 planned
+**10 / 12 complete** · 2 in progress · 0 planned
 
 The existing V0.1 implementation is the foundation. Do not rebuild or replace working authentication, chat, SSE, model routing, Studio, account, or data-lifecycle flows. Extend them incrementally.
 
@@ -44,7 +44,7 @@ Remaining model-system follow-ups: automatic model discovery, controlled failove
 | B3-01 | P0 | Documents data model and API | **Complete** | Migration v7 adds user-owned Markdown documents with project association, ownership triggers, bounded content and versions; authenticated CRUD/list/search API, optimistic concurrency, account export/deletion lifecycle and regression tests; PR #11 CI run #71 passed API tests and production build; merged as 4866e8e. |
 | B3-02 | P0 | Documents editor and autosave | **Complete** | Protected mobile-first Markdown library/editor, edit/preview, project association, 850 ms autosave, optimistic conflict recovery, Markdown export, and Chat action to save a completed assistant answer as a new document with optional project association and direct open link; PR #12 and PR #14 CI passed. |
 | B3-03 | P1 | Project context and file management | **Complete** | Migration v8, versioned project instructions, owner-scoped UTF-8 text file upload/download/delete, atomic quotas, explicit context opt-in, bounded untrusted excerpts, protected mobile-first UI, Chat context status, account export/deletion, and cross-account tests. PR #13 CI run #86 passed 33/33 API tests and production build. | Instructions are versioned; TXT/MD/CSV/JSON files are UTF-8 validated, limited to 2 MiB each and 10 MiB/20 files per project, default off for AI context, and isolated by account/project ownership. |
-| B3-04 | P1 | Real Research search and citations | Planned | Use a real search provider, preserve source URLs/metadata, distinguish retrieved facts from model synthesis, and produce cited reports. |
+| B3-04 | P1 | Real Research search and citations | **In progress** | PR #16 implements authenticated SearXNG/Brave adapters, source metadata/filtering, cited Markdown collection, and error handling; CI run #95 passed 38/38 API tests and production build. Live external provider configuration/connection and fuller AI-assisted synthesis are not yet verified. |
 
 Target work loop: **Create project → chat with AI → generate document → save it into the project → continue editing.**
 
@@ -54,7 +54,7 @@ Documents comes before project context/file management, and Research follows tho
 
 | ID | Priority | Task | Status | Completion criteria |
 |---|---|---|---|---|
-| B4-01 | P0 | Security, backup, and Android verification | Planned | Tighten CSRF/Origin/CSP, add admin audit and API/error monitoring, rehearse SQLite backup/restore, run Playwright E2E, and verify key flows in Android browsers including the Mate 20 Pro. |
+| B4-01 | P0 | Security, backup, and Android verification | **In progress** | Static source review of authentication, authorization, sessions, API keys, ownership boundaries, and Android small-screen CSS is recorded in `docs/audits/RESEARCH-DOCUMENTS-SECURITY-MOBILE-REVIEW.md`. Outstanding: strict CSRF/Origin and CSP, admin audit/monitoring, backup/restore, Playwright E2E, independent security testing, and Android device validation (deliberately deferred). |
 
 ## Definition of Done
 
@@ -205,3 +205,15 @@ Documents comes before project context/file management, and Research follows tho
 - Account export includes answer-version text; deleting the message/account cascades the associated versions.
 - CI run #55 passed: npm ci, all API integration tests, and the production web build.
 - Package version remains `0.1.0`; no release version change was made.
+
+
+## 2026-11-07 — Next-stage implementation review
+
+- Kept PR #15 open and unmerged. No changes were made to its branch or the `main` branch.
+- Opened Draft PR #16 from `feat/research-search-workspace` for Research web search, cited source organization, Documents reliability fixes, and source/mobile review.
+- Research now has a server-only SearXNG/Brave adapter, authenticated search API (8 requests/user/minute), request timeout/response-size limits, URL validation/deduplication, metadata preservation, and sanitized provider errors. Without a configured provider it returns `RESEARCH_SEARCH_NOT_CONFIGURED`; no sample/fake search results are used.
+- Research UI preserves the editorial CMS and adds a separate network-search view. Users can select actual returned sources, attach notes, and save a Markdown research record with URLs and citation index into their private Documents library.
+- CI run #95 passed: `npm ci`, 38/38 API tests, and `npm run build`. Tests verify authentication, missing-provider behavior, SearXNG normalization/filtering, Brave server-side credential handling, upstream error redaction, and administrator-only Research publishing. Provider responses are stubbed/local in CI; real external service connectivity remains unverified until deployment is configured.
+- Documents list refresh was calling an undefined `load()` function; PR #16 replaces it with a shared loader. Project-list failures no longer prevent the document itself from opening; unsaved browser unload warnings, conflict reload confirmation, and save/delete state guards were added.
+- Static security and Android layout review is documented separately. No database migrations, authentication architecture, Provider storage, or ownership model were changed by this stage.
+- Real Android browser/device acceptance remains deferred per project policy. Keep PR #16 as Draft and do not merge until review and later acceptance.
