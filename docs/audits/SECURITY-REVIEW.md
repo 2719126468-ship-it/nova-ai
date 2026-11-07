@@ -92,3 +92,14 @@ PR #4 基于较早的 main，不能整体合并。最新 main 已具有每用户
 
 PR #4 的 IP 限流暂缓。应用当前未配置可信反向代理跳数；若直接按 req.ip 限流，反向代理部署可能把所有访问者计为同一来源，造成误伤。部署时明确代理拓扑和 Express trust proxy 配置后，再启用 IP 维度限制。
 
+
+
+## 8. 2026-11-07 Research / Documents / Android 源码复核
+
+- 新增的分项审查记录：`docs/audits/RESEARCH-DOCUMENTS-SECURITY-MOBILE-REVIEW.md`。
+- 在 Draft PR #16 中增加真实搜索适配器（SearXNG/Brave）、认证/限流/URL 过滤/错误脱敏和对应测试；搜索 API Key 只在服务端读取。CI run #95 对这部分执行 4 个搜索适配/错误场景测试及 Research CMS 权限测试。
+- Documents 原有所有者隔离、项目归属验证和乐观并发控制保持不变；修复前端列表刷新未定义函数，降低项目列表故障对文档编辑的影响，并增加离开页面提醒与冲突覆盖确认。
+- 静态复核确认原有 HttpOnly session、服务端角色校验、Provider Key 加密、Documents/Projects/Conversations owner-scoped SQL 和 Research admin-only writes 仍然存在。
+- 本轮没有修复所有既存安全风险。SEC-05 CSP、SEC-08 CSRF/严格 Origin、SEC-09 过期 Session 清理、SEC-10 管理员审计日志、备份恢复、独立渗透测试和完整 Git 历史 secret scan 仍然开放。
+- Android 小屏样式已检查并局部改善，但没有执行 Android 真机或不同 WebView 版本测试。该部分不得标记为设备验收完成。
+- Draft PR #16 CI run #95：38/38 API tests passed，`npm ci` 依赖审计 0 vulnerabilities，Vite production build passed。该结果不是外部真实搜索 Provider 联通证明，也不是安全认证。
