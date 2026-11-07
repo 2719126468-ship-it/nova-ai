@@ -7,7 +7,10 @@
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "test": "node --test",
-    "admin:promote": "node scripts/promote-admin.js"
+    "admin:promote": "node scripts/promote-admin.js",
+    "db:backup": "node scripts/backup-db.js",
+    "db:restore": "node scripts/restore-db.js",
+    "db:verify": "node scripts/verify-db.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

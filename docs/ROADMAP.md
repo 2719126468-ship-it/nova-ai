@@ -83,3 +83,12 @@ Research 文章 CMS 与本地分类/筛选不等于已接入互联网搜索；�
 - PR #13 CI run #86：33/33 API tests passed；production web build passed。
 - 主分支合并后 CI 继续运行；不在该 run 完成前把 main 标记为已完成最终验证。
 - 包版本保持 `0.1.0`，仅在对应版本的发布验收完成后升级。
+
+## 2026-11-07 — B4-01 自动化验收完成
+
+- 已启用 API 与文档级 CSP，生产环境强制受信任 Origin，过期 Session 定期清理。
+- 迁移 v9 增加管理员审计日志；错误按稳定错误码聚合，管理员可在 Admin → 审计日志 / 错误监控查看。
+- 新增 `db:backup` / `db:restore` / `db:verify`：在线备份、完整性校验、sha256 清单、回滚安全恢复。
+- 新增 `npm run e2e`：17 项浏览器检查（注册、会话、Chat 未配置提示、项目创建、文档自动保存与刷新持久化、360px 布局、移动导航、Admin 三个面板），CI 增加 `browser-smoke` job。
+- API 进程可直接托管 `client/dist` 并提供 SPA 深链回退，客户端默认同源请求。
+- 仍未完成：独立渗透测试、完整 Git 历史密钥扫描、外部告警、Android 真机验收、第三方模型数据告知。详见 `docs/audits/B4-01-VERIFICATION.md`。

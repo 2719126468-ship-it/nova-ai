@@ -103,3 +103,17 @@ PR #4 的 IP 限流暂缓。应用当前未配置可信反向代理跳数；若�
 - 本轮没有修复所有既存安全风险。SEC-05 CSP、SEC-08 CSRF/严格 Origin、SEC-09 过期 Session 清理、SEC-10 管理员审计日志、备份恢复、独立渗透测试和完整 Git 历史 secret scan 仍然开放。
 - Android 小屏样式已检查并局部改善，但没有执行 Android 真机或不同 WebView 版本测试。该部分不得标记为设备验收完成。
 - Draft PR #16 CI run #95：38/38 API tests passed，`npm ci` 依赖审计 0 vulnerabilities，Vite production build passed。该结果不是外部真实搜索 Provider 联通证明，也不是安全认证。
+
+## 9. 2026-11-07 B4-01 硬化实施
+
+| 原风险 | 当前状态 | 证据 / 剩余边界 |
+|---|---|---|
+| SEC-05 CSP 关闭 | **已启用** | Helmet 对 API 下发 `default-src 'none'`、`frame-ancestors 'none'`；`index.html` 下发文档级 CSP（`script-src 'self'`、字体白名单、`connect-src` 取自 `WEB_ORIGIN`）。外部静态托管部署必须复制同一策略，见 `docs/DEPLOYMENT.md`。 |
+| SEC-08 CSRF/Origin 宽松 | **部分修复** | 生产环境变更请求缺少 `Origin` 返回 403 `MISSING_ORIGIN`；不可信来源仍 403。自定义头继续保留为纵深防御。尚未引入 CSRF Token/双重 Cookie；跨站脚本注入仍是同站请求的边界。 |
+| SEC-09 过期 Session 未清理 | **已修复** | 登录/注册时清理、进程启动时清理、之后每 6 小时清理一次；`expired sessions are purged and cannot authenticate` 覆盖。 |
+| SEC-10 管理员无审计 | **已修复（基础）** | 迁移 v9 `admin_audit_logs`；记录角色变更、Provider 增改删、默认模型、Research 内容写入；写入前脱敏，测试断言密钥、密文、基础地址与正文都不落库。审计日志目前只在进程内数据库，尚无外发与防篡改存储。 |
+| SEC-11 缺部署检查 | **部分修复** | 新增 `docs/DEPLOYMENT.md`：环境变量、反向代理、CSP 复制、备份恢复、运维入口与上线门槛。仍未接入外部告警与多实例共享限流。 |
+| 备份/恢复未演练 | **已演练** | `db:backup` 在线备份 + `PRAGMA integrity_check` + sha256 清单 + 保留策略；`db:restore` 保留 `pre-restore` 回滚副本；本机完成一次完整回路，见 `docs/audits/B4-01-VERIFICATION.md`。 |
+| 错误不可观测 | **已修复（进程内）** | 统一 `X-Request-Id`；按稳定错误码聚合，管理员可见。进程重启清零，尚未外发到告警系统。 |
+
+仍需在公开生产前完成：独立渗透测试、完整 Git 历史密钥扫描、第三方模型数据告知（SEC-07）、外部告警接入、多实例共享限流，以及 Android 真机验收。CI 与自动化通过不等于安全认证。

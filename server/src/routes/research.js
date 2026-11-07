@@ -4,6 +4,7 @@ import { rateLimit } from 'express-rate-limit';
 import { searchWeb } from '../services/research-search.js';
 import { db } from '../db.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
+import { recordAdminAction } from '../services/audit.js';
 
 const router = Router();
 const searchSchema = z.object({
@@ -63,6 +64,13 @@ router.post('/', requireAuth, requireAdmin, (req, res) => {
       VALUES(?,?,?,?,?,?,?,CASE WHEN ?='published' THEN CURRENT_TIMESTAMP ELSE NULL END)`)
       .run(slug, title, category, summary, body, status, req.user.id, status);
     const article = db.prepare('SELECT * FROM articles WHERE id=?').get(result.lastInsertRowid);
+    recordAdminAction({
+      actorUserId: req.user.id,
+      action: 'research_article.created',
+      targetType: 'research_article',
+      targetId: article.id,
+      metadata: { slug, status },
+    });
     res.status(201).json({ article });
   } catch (error) {
     if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return res.status(409).json({ error: 'SLUG_EXISTS', message: '该文章 URL 标识已存在。' });
@@ -80,6 +88,13 @@ router.put('/:id', requireAuth, requireAdmin, (req, res) => {
     updated_at=CURRENT_TIMESTAMP WHERE id=?`)
     .run(item.slug,item.title,item.category,item.summary,item.body,item.status,item.status,id);
   if (!result.changes) return res.status(404).json({ error: 'NOT_FOUND', message: '文章不存在。' });
+  recordAdminAction({
+    actorUserId: req.user.id,
+    action: 'research_article.updated',
+    targetType: 'research_article',
+    targetId: id,
+    metadata: { slug: item.slug, status: item.status },
+  });
   res.json({ article: db.prepare('SELECT * FROM articles WHERE id=?').get(id) });
 });
 router.delete('/:id', requireAuth, requireAdmin, (req, res) => {
@@ -87,6 +102,12 @@ router.delete('/:id', requireAuth, requireAdmin, (req, res) => {
   if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'INVALID_ID', message: '文章编号无效。' });
   const result = db.prepare('DELETE FROM articles WHERE id=?').run(id);
   if (!result.changes) return res.status(404).json({ error: 'NOT_FOUND', message: '文章不存在。' });
+  recordAdminAction({
+    actorUserId: req.user.id,
+    action: 'research_article.deleted',
+    targetType: 'research_article',
+    targetId: id,
+  });
   res.json({ success: true });
 });
 export default router;

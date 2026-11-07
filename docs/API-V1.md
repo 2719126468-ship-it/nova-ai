@@ -295,3 +295,52 @@ Administrators can read the latest records and aggregate totals through `GET /ap
 - Context budgets use local estimates or conservative byte upper bounds rather than the upstream tokenizer implementation for every third-party model. Cost/pricing estimates and hard account spending budgets remain unimplemented.
 - Persistent request Usage records capture lifecycle, duration, provider/model, normalized failure code, and upstream-reported token counts when supplied. Per-user request throttling and one-active-generation controls use a process-local store.
 - The old non-streaming JSON message endpoint remains available for compatibility; the Chat UI uses the streaming endpoint. User-message edits and assistant regeneration use the versioned PUT streaming endpoint and commit the replacement branch only after success. Assistant answer versions can be listed and restored with the conversation version endpoints.
+
+## Research
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | /api/v1/research | List published Research articles (public) |
+| GET | /api/v1/research/:slug | Read one published article (public) |
+| POST | /api/v1/research/search | Run a real web search (authenticated, 8 requests/user/minute) |
+| POST | /api/v1/research | Create an article (administrator only) |
+| PUT | /api/v1/research/:id | Update an article (administrator only) |
+| DELETE | /api/v1/research/:id | Delete an article (administrator only) |
+
+`POST /api/v1/research/search` body: `{ "query": "2-300 chars", "count": 1-10 }`. Responses are `Cache-Control: no-store` and contain `query`, `provider`, `retrievedAt`, `moreResultsAvailable` and `sources[]` where each source has `id`, `title`, `url`, `domain`, `snippet`, `publishedAt`, `engines` and `provider`.
+
+Search requires server-side configuration: `RESEARCH_SEARCH_PROVIDER=searxng` plus `RESEARCH_SEARCH_URL`, or `RESEARCH_SEARCH_PROVIDER=brave` plus `BRAVE_SEARCH_API_KEY`. With no provider the endpoint returns 503 `RESEARCH_SEARCH_NOT_CONFIGURED`; NOVA never returns sample or fabricated results. Only HTTP/HTTPS URLs without embedded credentials are returned; duplicates and untitled results are dropped. Provider errors are normalized:
+
+| Code | HTTP status | Meaning |
+|---|---:|---|
+| RESEARCH_SEARCH_NOT_CONFIGURED | 503 | No search provider is configured on the server |
+| RESEARCH_SEARCH_CONFIG_INVALID | 503 | The configured base URL is not a valid HTTPS base URL |
+| RESEARCH_SEARCH_TIMEOUT | 504 | The search provider exceeded `RESEARCH_SEARCH_TIMEOUT_MS` |
+| RESEARCH_SEARCH_NETWORK_ERROR | 502 | The search provider could not be reached |
+| RESEARCH_SEARCH_UPSTREAM_AUTH_FAILED | 502 | Provider rejected the credential or has JSON output disabled |
+| RESEARCH_SEARCH_UPSTREAM_RATE_LIMITED | 429 | Provider rate-limited the request |
+| RESEARCH_SEARCH_UPSTREAM_UNAVAILABLE | 502 | Provider returned an error status |
+| RESEARCH_SEARCH_RESPONSE_TOO_LARGE | 502 | Response exceeded the 1.5 MB read cap |
+| RESEARCH_SEARCH_INVALID_RESPONSE | 502 | Provider returned malformed JSON or an unreadable body |
+| RESEARCH_SEARCH_RATE_LIMITED | 429 | The authenticated user exceeded 8 searches/minute |
+
+Search results are retrieval material, not verified facts. The client lets users pick sources, attach notes, and save a Markdown record with retrieval time, snippets, URLs and citation indexes into their own Documents.
+
+## Administration: audit and monitoring
+
+Both endpoints require an authenticated administrator session and are `Cache-Control: no-store`.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | /api/v1/admin/audit-logs?limit=1-200 | Recent privileged actions (role changes, provider create/update/delete, default model, Research article writes) |
+| GET | /api/v1/admin/monitoring | In-process error aggregates plus uptime |
+
+Audit entries contain `id`, `actorUserId`, `actorEmail`, `actorName`, `action`, `targetType`, `targetId`, `metadata` and `createdAt`. Metadata is sanitized before storage: fields whose names look like credentials, tokens, passwords, cookies, encrypted blobs, base URLs or user content are dropped, strings are truncated to 300 characters, and nesting is capped. Audit writes never fail the request path.
+
+`/monitoring` returns `errors.totalErrors`, `errors.codes[]` (`code`, `count`, `lastStatus`, `lastAt`, `routes`), `errors.recent[]` (`requestId`, `code`, `status`, `route`, `at`) and `uptimeSeconds`. Counters are process-local and reset on restart. Every API response carries an `X-Request-Id` header; error responses echo the same value as `requestId`.
+
+## Security headers and origins
+
+- API responses are sent through Helmet with a deny-by-default CSP (`default-src 'none'`, `frame-ancestors 'none'`).
+- When the API also serves `client/dist`, `index.html` responses carry the document CSP and SPA deep-link fallback; see `docs/DEPLOYMENT.md`.
+- State-changing requests must send `X-Requested-With: NOVA-Web`. Any supplied `Origin` must match `WEB_ORIGIN`; in production a missing `Origin` returns 403 `MISSING_ORIGIN`.

@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -7,7 +10,8 @@ import { config } from './config.js';
 import { getModelRegistry } from './services/model-registry.js';
 import { requireAuth } from './middleware/auth.js';
 import { probeModel } from './services/model-health.js';
-import { requireAppRequest } from './middleware/security.js';
+import { requireAppRequest, apiCspDirectives, webDocumentCsp } from './middleware/security.js';
+import { newRequestId, recordError } from './services/monitoring.js';
 import authRoutes from './routes/auth.js';
 import projectRoutes from './routes/projects.js';
 import projectContextRoutes from './routes/project-context.js';
@@ -52,7 +56,16 @@ function getModelCatalog() {
 export function createApp() {
   const app = express();
   app.disable('x-powered-by');
-  app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+  app.use(helmet({
+    contentSecurityPolicy: { useDefaults: false, directives: apiCspDirectives },
+    crossOriginEmbedderPolicy: false,
+  }));
+  app.use((req, res, next) => {
+    const requestId = newRequestId();
+    req.requestId = requestId;
+    res.setHeader('X-Request-Id', requestId);
+    next();
+  });
   app.use(cors({
     origin(origin, callback) {
       callback(null, !origin || config.webOrigins.includes(origin));
@@ -145,14 +158,50 @@ export function createApp() {
   }));
   app.use((error, req, res, next) => {
     if (res.headersSent) return next(error);
-    if (error?.code && error?.status) return res.status(error.status).json({
-      error: error.code,
-      message: error.message,
-      ...(error.requestId ? { requestId: error.requestId } : {}),
-    });
-    if (error?.type === 'entity.too.large') return res.status(413).json({ error: 'PAYLOAD_TOO_LARGE', message: '请求内容过大。' });
-    console.error('[NOVA API]', error);
-    res.status(500).json({ error: 'INTERNAL_ERROR', message: '服务器发生错误，请稍后重试。' });
+    if (error?.code && error?.status) {
+      recordError({ code: error.code, status: error.status, route: req.originalUrl, requestId: req.requestId });
+      return res.status(error.status).json({
+        error: error.code,
+        message: error.message,
+        ...(error.requestId || req.requestId ? { requestId: error.requestId || req.requestId } : {}),
+      });
+    }
+    if (error?.type === 'entity.too.large') {
+      recordError({ code: 'PAYLOAD_TOO_LARGE', status: 413, route: req.originalUrl, requestId: req.requestId });
+      return res.status(413).json({ error: 'PAYLOAD_TOO_LARGE', message: '请求内容过大。', requestId: req.requestId });
+    }
+    recordError({ code: 'INTERNAL_ERROR', status: 500, route: req.originalUrl, requestId: req.requestId });
+    console.error('[NOVA API]', error?.message || error);
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: '服务器发生错误，请稍后重试。', requestId: req.requestId });
   });
   return app;
+}
+
+/**
+ * Serve the production client build from the API process when it exists.
+ * API routes stay authoritative; everything else falls back to index.html so
+ * client-side routes survive a hard refresh.
+ */
+export function attachClientBuild(app) {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const distDir = path.resolve(here, '../../client/dist');
+  const indexFile = path.join(distDir, 'index.html');
+  if (!fs.existsSync(indexFile)) return false;
+
+  const documentHeaders = (res, filePath) => {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Content-Security-Policy', webDocumentCsp);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  };
+  app.use(express.static(distDir, { index: false, maxAge: '1h', setHeaders: documentHeaders }));
+  app.get(/^(?!\/api(?:\/|$)).*/, (req, res, next) => {
+    if (req.method !== 'GET') return next();
+    documentHeaders(res, indexFile);
+    res.sendFile(indexFile);
+  });
+  return true;
 }

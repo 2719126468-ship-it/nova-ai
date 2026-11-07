@@ -313,7 +313,7 @@ test('database migrations add message lifecycle fields and are idempotent', () =
   assert.ok(columns.has('status'));
   assert.ok(columns.has('error_code'));
   const versions = db.prepare('SELECT version FROM schema_migrations ORDER BY version').all();
-  assert.deepEqual(versions.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.deepEqual(versions.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
   const versionColumns = new Set(db.prepare('PRAGMA table_info(message_versions)').all().map((column) => column.name));
   assert.ok(versionColumns.has('message_id'));
   assert.ok(versionColumns.has('content'));
@@ -333,6 +333,11 @@ test('database migrations add message lifecycle fields and are idempotent', () =
   const contextColumns = new Set(db.prepare('PRAGMA table_info(model_context_windows)').all().map((column) => column.name));
   assert.ok(contextColumns.has('provider_id'));
   assert.ok(contextColumns.has('upstream_model_id'));
+  const auditColumns = new Set(db.prepare('PRAGMA table_info(admin_audit_logs)').all().map((column) => column.name));
+  assert.ok(auditColumns.has('actor_user_id'));
+  assert.ok(auditColumns.has('action'));
+  assert.ok(auditColumns.has('target_type'));
+  assert.ok(auditColumns.has('metadata_json'));
   assert.ok(contextColumns.has('context_tokens'));
   assert.ok(contextColumns.has('source'));
   assert.ok(contextColumns.has('checked_at'));

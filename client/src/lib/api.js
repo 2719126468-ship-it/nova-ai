@@ -1,4 +1,9 @@
-const fallbackApiUrl = window.location.protocol + '//' + window.location.hostname + ':4000';
+// When the API also serves the built client, requests must stay on the same
+// origin. Only the Vite dev server (port 5173) talks to a separate API port.
+const isViteDevServer = window.location.port === '5173';
+const fallbackApiUrl = isViteDevServer
+  ? window.location.protocol + '//' + window.location.hostname + ':4000'
+  : window.location.origin;
 export const API_URL = (import.meta.env.VITE_API_URL || fallbackApiUrl).replace(/\/+$/, '');
 
 function apiError(data, status) {

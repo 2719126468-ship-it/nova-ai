@@ -5,6 +5,8 @@ import { config } from '../config.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { decryptProviderSecret, encryptProviderSecret } from '../services/provider-secrets.js';
 import { getModelRegistry } from '../services/model-registry.js';
+import { listAuditLogs, recordAdminAction } from '../services/audit.js';
+import { errorSnapshot } from '../services/monitoring.js';
 
 const providerIdSchema = z.string().trim().regex(/^[a-zA-Z0-9_-]{1,64}$/);
 const modelSchema = z.object({
@@ -195,9 +197,29 @@ router.patch('/users/:id/role', (req, res) => {
     return res.status(400).json({ error: 'VALIDATION_ERROR', message: '用户或角色参数无效。' });
   }
   if (id === req.user.id && role !== 'admin') return res.status(400).json({ error: 'SELF_DEMOTION_BLOCKED', message: '不能在当前会话中移除自己的管理员权限。' });
+  const previousRole = db.prepare('SELECT role FROM users WHERE id=?').get(id)?.role ?? null;
   const result = db.prepare('UPDATE users SET role=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(role,id);
   if (!result.changes) return res.status(404).json({ error: 'NOT_FOUND', message: '用户不存在。' });
+  recordAdminAction({
+    actorUserId: req.user.id,
+    action: 'user.role_changed',
+    targetType: 'user',
+    targetId: id,
+    metadata: { from: previousRole, to: role },
+  });
   res.json({ success: true });
+});
+
+router.get('/audit-logs', (req, res) => {
+  const requested = Number(req.query.limit ?? 50);
+  const limit = Number.isInteger(requested) ? Math.min(Math.max(requested, 1), 200) : 50;
+  res.set('Cache-Control', 'no-store');
+  res.json({ logs: listAuditLogs(limit) });
+});
+
+router.get('/monitoring', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ errors: errorSnapshot(25), uptimeSeconds: Math.round(process.uptime()) });
 });
 
 router.get('/providers', (req, res) => {
@@ -224,6 +246,13 @@ router.post('/providers', (req, res, next) => {
       VALUES(?,?,'openai-compatible',?,?,?,?)
     `).run(input.id, input.name, input.baseUrl.replace(/\/+$/, ''), secret, input.enabled ? 1 : 0, JSON.stringify(models));
 
+    recordAdminAction({
+      actorUserId: req.user.id,
+      action: 'provider.created',
+      targetType: 'provider',
+      targetId: input.id,
+      metadata: { name: input.name, enabled: input.enabled, models: models.map((model) => model.id) },
+    });
     res.status(201).json(providerManagementState());
   } catch (error) {
     next(error);
@@ -268,6 +297,18 @@ router.put('/providers/:id', (req, res, next) => {
       db.prepare('DELETE FROM model_context_windows WHERE provider_id=?').run(id.data);
     }
 
+    recordAdminAction({
+      actorUserId: req.user.id,
+      action: 'provider.updated',
+      targetType: 'provider',
+      targetId: id.data,
+      metadata: {
+        name: input.name ?? current.name,
+        enabled: input.enabled === undefined ? current.enabled === 1 : input.enabled,
+        apiKeyRotated: Boolean(typeof input.apiKey === 'string' && input.apiKey.trim()),
+        models: models.map((model) => model.id),
+      },
+    });
     res.json(providerManagementState());
   } catch (error) {
     next(error);
@@ -289,6 +330,13 @@ router.delete('/providers/:id', (req, res) => {
   if (defaultSetting.startsWith(id.data + ':')) {
     db.prepare("DELETE FROM ai_settings WHERE key='default_model_id'").run();
   }
+  recordAdminAction({
+    actorUserId: req.user.id,
+    action: 'provider.deleted',
+    targetType: 'provider',
+    targetId: id.data,
+    metadata: { defaultModelCleared: defaultSetting.startsWith(id.data + ':') },
+  });
   res.json(providerManagementState());
 });
 
@@ -312,6 +360,13 @@ router.put('/model-default', (req, res) => {
   } else {
     db.prepare("DELETE FROM ai_settings WHERE key='default_model_id'").run();
   }
+  recordAdminAction({
+    actorUserId: req.user.id,
+    action: 'model.default_changed',
+    targetType: 'model',
+    targetId: modelId,
+    metadata: { defaultModelId: modelId },
+  });
   res.json(providerManagementState());
 });
 

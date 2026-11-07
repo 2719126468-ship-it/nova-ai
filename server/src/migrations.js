@@ -213,6 +213,27 @@ const migrations = [
       `);
     },
   },
+  {
+    version: 9,
+    name: 'admin-audit-logs',
+    up(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS admin_audit_logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+          action TEXT NOT NULL CHECK(length(action) BETWEEN 1 AND 80),
+          target_type TEXT NOT NULL CHECK(length(target_type) BETWEEN 1 AND 60),
+          target_id TEXT,
+          metadata_json TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_created
+          ON admin_audit_logs(created_at DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_actor
+          ON admin_audit_logs(actor_user_id, created_at DESC);
+      `);
+    },
+  },
 
 ];
 

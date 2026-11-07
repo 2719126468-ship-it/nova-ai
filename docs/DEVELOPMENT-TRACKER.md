@@ -7,7 +7,7 @@
 
 ## Progress
 
-**10 / 12 complete** · 2 in progress · 0 planned
+**11 / 12 complete** · 1 in progress · 0 planned
 
 The existing V0.1 implementation is the foundation. Do not rebuild or replace working authentication, chat, SSE, model routing, Studio, account, or data-lifecycle flows. Extend them incrementally.
 
@@ -44,7 +44,7 @@ Remaining model-system follow-ups: automatic model discovery, controlled failove
 | B3-01 | P0 | Documents data model and API | **Complete** | Migration v7 adds user-owned Markdown documents with project association, ownership triggers, bounded content and versions; authenticated CRUD/list/search API, optimistic concurrency, account export/deletion lifecycle and regression tests; PR #11 CI run #71 passed API tests and production build; merged as 4866e8e. |
 | B3-02 | P0 | Documents editor and autosave | **Complete** | Protected mobile-first Markdown library/editor, edit/preview, project association, 850 ms autosave, optimistic conflict recovery, Markdown export, and Chat action to save a completed assistant answer as a new document with optional project association and direct open link; PR #12 and PR #14 CI passed. |
 | B3-03 | P1 | Project context and file management | **Complete** | Migration v8, versioned project instructions, owner-scoped UTF-8 text file upload/download/delete, atomic quotas, explicit context opt-in, bounded untrusted excerpts, protected mobile-first UI, Chat context status, account export/deletion, and cross-account tests. PR #13 CI run #86 passed 33/33 API tests and production build. | Instructions are versioned; TXT/MD/CSV/JSON files are UTF-8 validated, limited to 2 MiB each and 10 MiB/20 files per project, default off for AI context, and isolated by account/project ownership. |
-| B3-04 | P1 | Real Research search and citations | **In progress** | PR #16 implements authenticated SearXNG/Brave adapters, source metadata/filtering, cited Markdown collection, and error handling; CI run #95 passed 38/38 API tests and production build. Live external provider configuration/connection and fuller AI-assisted synthesis are not yet verified. |
+| B3-04 | P1 | Real Research search and citations | **In progress** | Authenticated SearXNG/Brave adapters, source metadata/filtering, cited Markdown collection into Documents, per-user 8/min limiter, timeout/size caps and sanitized errors are merged to `main`; 45/45 API tests pass. Live external provider connectivity still cannot be verified from this environment (no outbound egress), and AI-assisted research-plan synthesis is not implemented. |
 
 Target work loop: **Create project → chat with AI → generate document → save it into the project → continue editing.**
 
@@ -54,7 +54,7 @@ Documents comes before project context/file management, and Research follows tho
 
 | ID | Priority | Task | Status | Completion criteria |
 |---|---|---|---|---|
-| B4-01 | P0 | Security, backup, and Android verification | **In progress** | Static source review of authentication, authorization, sessions, API keys, ownership boundaries, and Android small-screen CSS is recorded in `docs/audits/RESEARCH-DOCUMENTS-SECURITY-MOBILE-REVIEW.md`. Outstanding: strict CSRF/Origin and CSP, admin audit/monitoring, backup/restore, Playwright E2E, independent security testing, and Android device validation (deliberately deferred). |
+| B4-01 | P0 | Security, backup, and Android verification | **Complete (automation scope)** | CSP enabled for API and document responses, production mutations require a trusted Origin, expired sessions are purged, migration v9 adds admin audit logs, error monitoring aggregates stable codes with request IDs, `db:backup`/`db:restore`/`db:verify` implement verified backup and rollback-safe restore, and `npm run e2e` drives 17 browser checks in CI. See `docs/audits/B4-01-VERIFICATION.md` and `docs/DEPLOYMENT.md`. Independent penetration testing, full Git-history secret scanning, external alerting, and Android device acceptance remain open and are listed as release gates, not as completed items. |
 
 ## Definition of Done
 
@@ -217,3 +217,20 @@ Documents comes before project context/file management, and Research follows tho
 - Documents list refresh was calling an undefined `load()` function; PR #16 replaces it with a shared loader. Project-list failures no longer prevent the document itself from opening; unsaved browser unload warnings, conflict reload confirmation, and save/delete state guards were added.
 - Static security and Android layout review is documented separately. No database migrations, authentication architecture, Provider storage, or ownership model were changed by this stage.
 - Real Android browser/device acceptance remains deferred per project policy. Keep PR #16 as Draft and do not merge until review and later acceptance.
+
+## 2026-11-07 — Latest remote integration and B4-01 hardening
+
+- Pulled the two newest remote branches and merged them into `main`: `feat/research-search-workspace` (fast-forward, Research search + Documents reliability) and `fix/chat-no-provider-guidance` (merge commit; resolved one `client/src/styles/chat.css` conflict by keeping both the mobile touch-target block and the model-state block).
+- Client API base URL now defaults to the same origin when the API process serves `client/dist`; only the Vite dev server on :5173 keeps pointing at :4000.
+- `createApp()` keeps the API contract; new `attachClientBuild()` serves the production build with SPA deep-link fallback and document-level CSP.
+- SEC-05: Helmet CSP enabled with a deny-by-default policy for API responses; `index.html` receives the document policy (self scripts, Google Fonts, `connect-src` from `WEB_ORIGIN`).
+- SEC-08: in production a state-changing request without `Origin` is rejected with `MISSING_ORIGIN`; untrusted origins still get `INVALID_ORIGIN`.
+- SEC-09: expired sessions are purged on login/registration, at boot, and every 6 hours.
+- SEC-10: migration v9 adds `admin_audit_logs`. Role changes, Provider create/update/delete, default-model changes and Research article writes are recorded after passing through a sanitizer that drops keys, ciphertext, base URLs and user content.
+- Error monitoring: every response carries `X-Request-Id`; failures are aggregated by stable NOVA error code and exposed through `GET /api/v1/admin/monitoring` (admin only).
+- Backup/restore: `npm run db:backup` uses the SQLite online backup API, runs `PRAGMA integrity_check`, writes a sha256 manifest and prunes old copies; `db:restore` keeps a `pre-restore` rollback copy; `db:verify` checks any database file.
+- TD-19: `npm run e2e` drives the built client with system Chromium through puppeteer-core — 17 checks covering registration, session persistence, Chat unconfigured-model guidance, Studio project creation, document autosave + reload persistence, 360 px layout, mobile drawer, and the Admin monitoring/audit/provider panels. CI gained a `browser-smoke` job using `browser-actions/setup-chrome`.
+- Admin UI gained 审计日志 and 错误监控 tabs backed by the new endpoints.
+- Verification record: `docs/audits/B4-01-VERIFICATION.md`. Deployment/backup runbook: `docs/DEPLOYMENT.md`.
+- Honest limits: no outbound network in this environment, so real SearXNG/Brave connectivity, external alert delivery, independent penetration testing, full Git-history secret scan and Android device acceptance remain unverified and are listed as open release gates.
+

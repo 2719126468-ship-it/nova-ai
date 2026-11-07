@@ -5,6 +5,7 @@ import { db } from '../db.js';
 import { config } from '../config.js';
 import { requireAuth } from '../middleware/auth.js';
 import { createSessionToken, hashToken, publicUser } from '../utils.js';
+import { purgeExpiredSessions } from '../services/sessions.js';
 
 const router = Router();
 const registerSchema = z.object({
@@ -26,6 +27,7 @@ function setSession(res, token) {
   });
 }
 function createSession(userId) {
+  purgeExpiredSessions();
   const token = createSessionToken();
   const expiresAt = new Date(Date.now() + config.sessionDays * 86400000).toISOString();
   db.prepare('INSERT INTO sessions(user_id,token_hash,expires_at) VALUES(?,?,?)').run(userId, hashToken(token), expiresAt);

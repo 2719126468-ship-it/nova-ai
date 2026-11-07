@@ -7,5 +7,7 @@ server/data/*.sqlite
 server/data/*.sqlite-*
 client/dist/
 coverage/
+backups/
+.tmp/
 .DS_Store
 *.log
