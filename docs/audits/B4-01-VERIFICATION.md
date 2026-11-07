@@ -17,6 +17,8 @@
 | SEC-04 备份恢复 | 在线备份 + 完整性校验 + sha256 清单 + 保留策略；恢复保留回滚副本 | `database backup verifies integrity and restores over the live file`；本机 CLI 演练 |
 | TD-19 E2E | 新增 `scripts/e2e-smoke.mjs`（puppeteer-core + 系统 Chromium），27 项浏览器检查 | 本机 27/27 通过；CI 新增 `browser-smoke` job |
 | 历史密钥扫描 | 新增 scripts/scan-secrets.mjs：扫描工作区全部跟踪文件与全部可达 Git blob，覆盖私钥、OpenAI/Anthropic/GitHub/AWS/Google/Slack/Stripe/Brave 令牌、JWT 与硬编码凭据赋值；CI 以 fetch-depth: 0 执行 | 本机全历史扫描 102 个文件 / 1778 个 blob，0 findings；植入假密钥自测返回 exit 1，清理后 exit 0 |
+| 模型自动发现 | 管理员只读 POST /api/v1/models/discover 读取上游 /models，返回模型 ID、上下文窗口与 alreadyConfigured；Provider 编辑器可一键追加到 JSON 草稿 | `model discovery and persisted health snapshots stay admin-only and redact credentials`（含密钥与 baseUrl 不外泄断言） |
+| 健康快照 | 迁移 v11 `model_health_snapshots`；探测结果保留 24 小时并在模型目录中体现，过期自动回落到 unknown | `model health snapshots expire and never expose credentials through the catalog` |
 | Research 事实/推断分离 | Research 报告现在分为「检索资料（未核验）」「我的综合分析（未证实）」「未证实推测」三节，并提供综合分析输入框；检索摘要与作者推断不再混在一起 | 构建通过；E2E 断言未配置 Provider 时不产生来源卡片 |
 | V0.2 文档归档 | 迁移 v10 `documents.archived_at`；列表 `archived=active\|archived\|all` + `archivedCount`；列表与编辑器均提供版本校验的归档/恢复 | `documents API enforces ownership, project isolation, validation, and optimistic concurrency`（含归档断言）；E2E 归档 → 已归档页 → 恢复三步 |
 | 部署形态 | `attachClientBuild()` 让 API 进程托管 `client/dist` 并回退 SPA 深链；客户端同源请求 | E2E 断言深链与注册后跳转 |
@@ -26,12 +28,12 @@
 ### API 测试
 
 ```
-ℹ tests 45
-ℹ pass 45
+ℹ tests 47
+ℹ pass 47
 ℹ fail 0
 ```
 
-其中新增 7 项硬化测试（CSP/Origin/会话清理/审计/脱敏/监控/备份恢复），原有 38 项保持通过。
+其中新增 9 项硬化/发现测试（CSP/Origin/会话清理/审计/脱敏/监控/备份恢复），原有 38 项保持通过。
 
 ### 生产构建
 
@@ -71,7 +73,7 @@ db:restore → 保留 nova.sqlite.pre-restore-<ts>，恢复后完整性 ok
 
 ```bash
 npm ci
-npm test                 # 45 项 API 测试
+npm test                 # 47 项 API 测试
 npm run build            # 生产构建
 npm run e2e              # 浏览器端到端（需 Chromium，可用 CHROMIUM_PATH 指定）
 npm run db:backup        # 备份 + 校验
