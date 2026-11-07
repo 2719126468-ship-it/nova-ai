@@ -236,3 +236,11 @@ Documents comes before project context/file management, and Research follows tho
 - Verification record: `docs/audits/B4-01-VERIFICATION.md`. Deployment/backup runbook: `docs/DEPLOYMENT.md`.
 - Honest limits: no outbound network in this environment, so real SearXNG/Brave connectivity, external alert delivery, independent penetration testing, full Git-history secret scan and Android device acceptance remain unverified and are listed as open release gates.
 
+
+## 2026-11-07 — 推送 main 并在 CI 上验证
+
+- 本地 42 个提交已全部推送到 `origin/main`（`98c2ec6..ecd7793`）。
+- GitHub Actions run 42388578671：`verify`（npm ci → 52/52 API 测试 → 全历史密钥扫描 → 生产构建）与 `browser-smoke`（28 项浏览器检查）双双通过。
+- 修复两处路径缺陷：相对 `DB_PATH` 与 `db:restore` 的备份参数此前按 `process.cwd()` 解析，在 `npm run -w server` 下会拼出 `server/server/data/...`；现在统一按仓库根目录解析，并各有回归测试。
+- 新增阈值告警：`ALERT_WEBHOOK_URL` + `ALERT_ERROR_THRESHOLD` / `ALERT_COOLDOWN_SECONDS`，错误码达到阈值且超出冷却才投递，payload 只含错误码/次数/状态码/路由/运行时长；Admin → 错误监控 提供测试按钮并写入审计日志。
+- 运维说明补充：相对路径解析规则、告警配置项、上线前剩余门槛。
