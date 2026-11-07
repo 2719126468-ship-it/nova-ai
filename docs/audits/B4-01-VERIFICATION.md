@@ -19,6 +19,7 @@
 | 历史密钥扫描 | 新增 scripts/scan-secrets.mjs：扫描工作区全部跟踪文件与全部可达 Git blob，覆盖私钥、OpenAI/Anthropic/GitHub/AWS/Google/Slack/Stripe/Brave 令牌、JWT 与硬编码凭据赋值；CI 以 fetch-depth: 0 执行 | 本机全历史扫描 102 个文件 / 1778 个 blob，0 findings；植入假密钥自测返回 exit 1，清理后 exit 0 |
 | 模型自动发现 | 管理员只读 POST /api/v1/models/discover 读取上游 /models，返回模型 ID、上下文窗口与 alreadyConfigured；Provider 编辑器可一键追加到 JSON 草稿 | `model discovery and persisted health snapshots stay admin-only and redact credentials`（含密钥与 baseUrl 不外泄断言） |
 | 健康快照 | 迁移 v11 `model_health_snapshots`；探测结果保留 24 小时并在模型目录中体现，过期自动回落到 unknown | `model health snapshots expire and never expose credentials through the catalog` |
+| Research 带引用草稿 | 新增 `POST /api/v1/research/synthesize`：把用户所选来源（重新校验 URL、去重、截断摘要）交给已配置模型，要求逐句标注来源序号，并强制输出「已检索事实 / 综合判断 / 待核实」三段；结果标注为模型综合，前端可一键填入综合分析框 | `research synthesis cites selected sources, labels itself as model output, and never fabricates without a provider`（含无 Provider 时 503、匿名 401、非法 URL 400） |
 | SEC-07 第三方数据告知 | 新增公开页面 `/privacy`：说明哪些内容会发送给第三方模型、NOVA 保存什么、用户可用的控制项与边界；Chat 免责声明与页脚均链到该页 | E2E 未登录访问 `/privacy` 可读到披露内容 |
 | Research 事实/推断分离 | Research 报告现在分为「检索资料（未核验）」「我的综合分析（未证实）」「未证实推测」三节，并提供综合分析输入框；检索摘要与作者推断不再混在一起 | 构建通过；E2E 断言未配置 Provider 时不产生来源卡片 |
 | V0.2 文档归档 | 迁移 v10 `documents.archived_at`；列表 `archived=active\|archived\|all` + `archivedCount`；列表与编辑器均提供版本校验的归档/恢复 | `documents API enforces ownership, project isolation, validation, and optimistic concurrency`（含归档断言）；E2E 归档 → 已归档页 → 恢复三步 |
@@ -29,8 +30,8 @@
 ### API 测试
 
 ```
-ℹ tests 47
-ℹ pass 47
+ℹ tests 48
+ℹ pass 48
 ℹ fail 0
 ```
 
@@ -74,7 +75,7 @@ db:restore → 保留 nova.sqlite.pre-restore-<ts>，恢复后完整性 ok
 
 ```bash
 npm ci
-npm test                 # 47 项 API 测试
+npm test                 # 48 项 API 测试
 npm run build            # 生产构建
 npm run e2e              # 浏览器端到端（需 Chromium，可用 CHROMIUM_PATH 指定）
 npm run db:backup        # 备份 + 校验
