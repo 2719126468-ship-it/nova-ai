@@ -96,3 +96,21 @@
   .document-editor-footer { justify-content: flex-start; }
   .document-editor-footer > span:last-of-type { margin-right: auto; }
 }
+
+@media (max-width: 600px) {
+  .documents-toolbar-actions .button,
+  .documents-toolbar-actions .documents-icon-button { min-height: 44px; }
+  .documents-toolbar-actions .documents-icon-button { width: 44px; }
+  .document-editor-actions .button,
+  .document-editor-actions .documents-icon-button { min-width: 44px; min-height: 44px; }
+  .document-editor-subbar { gap: 10px; }
+  .document-mode-switch { width: 100%; }
+  .document-mode-switch button { flex: 1; min-height: 44px; }
+  .document-markdown-input { min-height: 55vh; }
+  .document-conflict-banner .button { min-height: 44px; font-size: 10px; }
+}
+@supports (height: 100dvh) {
+  @media (max-width: 600px) {
+    .document-markdown-input, .document-markdown-preview { min-height: 55dvh; }
+  }
+}
