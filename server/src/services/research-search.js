@@ -164,7 +164,7 @@ function normalizeSources(results, provider) {
             ? item.page_fetched.slice(0, 100)
             : null;
     const engines = Array.isArray(item.engines)
-      ? [...new Set(item.engines.filter((engine) => typeof engine === 'string').map((engine) => engine.slice(0, 60))].slice(0, 8)
+      ? [...new Set(item.engines.filter((engine) => typeof engine === 'string').map((engine) => engine.slice(0, 60)))].slice(0, 8)
       : [];
     sources.push({
       id: createHash('sha256').update(url).digest('hex').slice(0, 16),
