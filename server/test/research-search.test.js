@@ -95,7 +95,7 @@ test('SearXNG search normalizes real upstream results, filters unsafe URLs, and 
         },
         { title: 'Unsafe URL', url: 'javascript:alert(1)', content: 'Must be filtered.' },
         { title: 'Credential URL', url: 'https://user:pass@example.org/private', content: 'Must be filtered.' },
-        { title: 'Missing title', url: 'https://example.org/no-title', content: 'Must be filtered.' },
+        { url: 'https://example.org/no-title', content: 'Must be filtered.' },
       ],
     }));
   });
