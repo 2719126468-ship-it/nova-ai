@@ -1,9 +1,23 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { rateLimit } from 'express-rate-limit';
+import { searchWeb } from '../services/research-search.js';
 import { db } from '../db.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 
 const router = Router();
+const searchSchema = z.object({
+  query: z.string().trim().min(2).max(300),
+  count: z.number().int().min(1).max(10).optional().default(8),
+});
+const searchLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 8,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => 'user:' + req.user.id,
+  message: { error: 'RESEARCH_SEARCH_RATE_LIMITED', message: '研究搜索请求过于频繁，请稍后再试。' },
+});
 const articleSchema = z.object({
   slug: z.string().trim().min(3).max(120).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
   title: z.string().trim().min(3).max(180),
@@ -12,6 +26,23 @@ const articleSchema = z.object({
   body: z.string().trim().min(20).max(50000),
   status: z.enum(['draft', 'published']).default('draft'),
 });
+router.post('/search', requireAuth, searchLimiter, async (req, res, next) => {
+  const parsed = searchSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      message: '搜索关键词必须为 2–300 个字符，结果数量必须为 1–10。',
+    });
+  }
+  try {
+    const result = await searchWeb(parsed.data.query, parsed.data.count);
+    res.set('Cache-Control', 'no-store');
+    return res.json(result);
+  } catch (error) {
+    return next(error);
+  }
+});
+
 router.get('/', (req, res) => {
   const articles = db.prepare(`SELECT id,slug,title,category,summary,published_at,created_at,updated_at
     FROM articles WHERE status='published' ORDER BY published_at DESC,id DESC`).all();
