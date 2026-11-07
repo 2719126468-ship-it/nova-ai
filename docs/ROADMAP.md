@@ -3,7 +3,7 @@
 - Updated: 2026-11-07
 - 当前基线：`main`
 - 详细任务状态以 [NOVA Development Tracker](DEVELOPMENT-TRACKER.md) 为准。
-- 当前策略：先完成 V0.1 发布门槛与 V0.2 工作流闭环，不重建已工作的核心模块。
+- 当前策略：先完成 V0.1 发布门槛与 V0.2 工作流闭环，再推进 V0.3 Research；不重建已工作的核心模块。
 
 ## V0.1 — 核心对话系统
 
@@ -44,17 +44,20 @@
 - [x] Chat → Documents：从任意完整 AI 回答创建 Markdown 文档，可选择个人空间或项目，并直接打开继续编辑
 - [ ] 完善文档重命名、归档和更丰富的编辑体验
 - [ ] 真机验证文档自动保存、文件选择/上传、下载和项目上下文开关
+- [ ] PR #16 的 Documents 刷新/冲突恢复改进进入主分支前复核
 
 ## V0.3 — Research 与 Provider 扩展
 
-- [ ] 接入真实搜索 Provider，保留来源 URL、标题、时间和检索元数据
-- [ ] 研究计划、可验证引用、结构化报告、保存与 Markdown 导出
+**进度：真实搜索适配与带引用的来源整理已实现于 Draft PR #16；等待审查与真实 Provider 配置验证。**
+
+- [ ] 接入真实搜索 Provider，保留来源 URL、标题、时间和检索元数据（SearXNG/Brave 适配已实现；真实部署连接未验收）
+- [ ] 研究计划、可验证引用、结构化报告、保存与 Markdown 导出（来源选择、笔记、引用索引和 Markdown 保存已实现；AI 综合研究计划/正文仍待实现）
 - [ ] 明确区分检索事实、模型综合和未证实推测
 - [ ] 原生 Anthropic API Adapter
 - [ ] OAuth / 浏览器登录型 Provider 的独立会话与协议适配
 - [ ] 可控模型自动发现、健康巡检和故障切换
 
-Research 文章 CMS 与本地分类/筛选不等于已接入互联网搜索；未得到真实检索结果时不得声称已经搜索。
+Research 文章 CMS 与本地分类/筛选不等于已接入互联网搜索；必须使用已配置 Provider 的真实返回结果，未得到真实检索结果时不得声称已经搜索。CI 使用本地/Stub 响应只验证适配协议，不代表外部 Provider 已连通。
 
 ## V1.0 — 稳定公开版本
 
@@ -76,6 +79,7 @@ Research 文章 CMS 与本地分类/筛选不等于已接入互联网搜索；�
 ## 最近验收记录
 
 - 2026-11-07：PR #13 merged，Project Context 和受控文本资料管理进入 `main`。
+- 2026-11-07：Draft PR #16 添加 Research 搜索/引用工作流、Documents 小范围可靠性修复和源码安全/移动端审查记录；CI run #95 通过 38/38 API tests 与生产构建。PR #16 未合并，真实 Provider 和 Android 真机验收仍待完成。
 - PR #13 CI run #86：33/33 API tests passed；production web build passed。
 - 主分支合并后 CI 继续运行；不在该 run 完成前把 main 标记为已完成最终验证。
 - 包版本保持 `0.1.0`，仅在对应版本的发布验收完成后升级。
