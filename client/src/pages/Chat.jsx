@@ -129,9 +129,11 @@ export default function Chat() {
       const status = Number.isInteger(cause?.status) ? cause.status : null;
       setModelInfo(null);
       setModelLoadError({
-        kind: status === null ? 'network' : status >= 500 ? 'server' : 'request',
-        message: status === null
-          ? '无法连接 NOVA API 服务。请检查网络连接和服务端进程。'
+        kind: cause?.kind || (status === null ? 'network' : status >= 500 ? 'server' : 'request'),
+        message: cause?.kind === 'invalid_response'
+          ? cause.message
+          : status === null
+            ? '无法连接 NOVA API 服务。请检查网络连接和服务端进程。'
           : status >= 500
             ? '模型配置服务暂时异常（HTTP ' + status + '）。'
             : cause.message || '模型配置请求失败。',
@@ -548,7 +550,8 @@ export default function Chat() {
           <Suspense fallback={<ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>}>
             <HighlightedMarkdown content={message.content} />
           </Suspense>
-        ) : <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>}</div></div></div>)}<div ref={endRef} /></div>}</div></div>      <div className="chat-composer-wrap"><ErrorNotice>{error}</ErrorNotice>{contextNotice && <div className="context-budget-notice" role="status">{contextNotice}</div>}<form className="chat-composer" onSubmit={sendMessage}>{editingMessageId && <div className="composer-edit-hint">重新生成成功后，会删除这条消息后面的对话内容；失败或停止会保留原对话。</div>}<textarea value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={editingMessageId ? '编辑消息并重新生成…' : '向 NOVA 发送消息…'} rows={1} disabled={sending} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(e); } }} /><div className="composer-bottom"><span><Sparkles size={13} /> {selectedModel?.configured && selectedModel?.status === 'unknown' ? '模型已配置 · 上游状态未验证' : selectedModel ? '已选择模型 · 上游状态未知' : '模型服务由服务器配置'}</span>{editingMessageId && !sending && <button className="composer-cancel" type="button" onClick={cancelEditMessage}>取消编辑</button>}{sending ? <button type="button" onClick={stopGeneration} aria-label="停止生成"><Square size={15} /></button> : <button type="submit" disabled={!draft.trim()} aria-label="发送消息"><Send size={17} /></button>}</div></form><div className="chat-disclaimer">NOVA 可能会出错。重要信息请自行核实。模型未配置时不会生成虚假回答。</div></div>
+        ) : <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>}</div></div></div>)}<div ref={endRef} /></div>}</div></div>
+      <div className="chat-composer-wrap"><ErrorNotice>{error}</ErrorNotice>{contextNotice && <div className="context-budget-notice" role="status">{contextNotice}</div>}<form className="chat-composer" onSubmit={sendMessage}>{editingMessageId && <div className="composer-edit-hint">重新生成成功后，会删除这条消息后面的对话内容；失败或停止会保留原对话。</div>}<textarea value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={editingMessageId ? '编辑消息并重新生成…' : '向 NOVA 发送消息…'} rows={1} disabled={sending} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(e); } }} /><div className="composer-bottom"><span><Sparkles size={13} /> {selectedModel?.configured && selectedModel?.status === 'unknown' ? '模型已配置 · 上游状态未验证' : selectedModel ? '已选择模型 · 上游状态未知' : '模型服务由服务器配置'}</span>{editingMessageId && !sending && <button className="composer-cancel" type="button" onClick={cancelEditMessage}>取消编辑</button>}{sending ? <button type="button" onClick={stopGeneration} aria-label="停止生成"><Square size={15} /></button> : <button type="submit" disabled={!draft.trim()} aria-label="发送消息"><Send size={17} /></button>}</div></form><div className="chat-disclaimer">NOVA 可能会出错。重要信息请自行核实。模型未配置时不会生成虚假回答。</div></div>
     </section>
   </main>;
 }
