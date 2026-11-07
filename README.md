@@ -182,16 +182,20 @@ AI_DEFAULT_MODEL=
 - Provider 密钥不会写入浏览器，也不会出现在 `/api/v1/models` 或健康检查响应中。
 - 修改配置后重启服务端。
 - 尚未配置可选择的模型时，聊天接口会返回 `503 AI_PROVIDER_NOT_CONFIGURED`；不会生成虚构回答。
-- 旧版 `POST /api/conversations/:id/messages` 保留完整 JSON 响应；新版 `POST /api/v1/conversations/:id/messages/stream` 支持 SSE 增量输出、上游请求取消和消息生命周期状态。模型目录区分配置、启用、可选择与上游健康状态；多 Provider JSON 注册表已支持 OpenAI-compatible Chat Completions，已支持按需读取上游 `/models` 目录核验模型 ID，但没有自动健康巡检；自动发现、浏览器登录/OAuth Provider、工具调用或图片输入仍未实现。
+- 旧版 `POST /api/conversations/:id/messages` 保留完整 JSON 响应；新版 `POST /api/v1/conversations/:id/messages/stream` 支持 SSE 增量输出、上游请求取消和消息生命周期状态。模型目录区分配置、启用、可选择与上游健康状态；多 Provider JSON 注册表支持 OpenAI-compatible Chat Completions，管理员可只读发现上游 `/models` 目录并把模型一键加入配置，健康探测结果保留 24 小时快照；尚无持续巡检与故障切换，浏览器登录/OAuth Provider、工具调用和图片输入仍未实现。
 
 ## 测试与构建
 
 ```bash
-npm test
-npm run build
+npm test              # 47 项 API 集成测试（临时 SQLite，不触碰开发库）
+npm run build         # 生产前端构建
+npm run e2e           # 浏览器端到端 27 项检查（需 Chromium；CHROMIUM_PATH 可指定）
+npm run scan:secrets  # 工作区 + Git 全历史密钥扫描
+npm run db:backup     # 在线备份 + 完整性校验 + sha256 清单
+npm run db:verify     # 校验当前库或指定备份
 ```
 
-API 集成测试会使用临时 SQLite 文件，不会覆盖你的开发数据库。
+`npm run e2e` 会用真实 API 进程托管 `client/dist`，再以系统 Chromium 在桌面与 360 px 视口执行注册、会话保持、Chat 未配置提示、Research 未配置提示、项目建项与资料上传/下载/上下文开关、文档自动保存与归档恢复、移动端布局和 Admin 三个面板等流程。CI 中 `verify` 与 `browser-smoke` 两个 job 分别执行。
 
 ## 安全基线
 
@@ -201,14 +205,19 @@ API 集成测试会使用临时 SQLite 文件，不会覆盖你的开发数据�
 - 使用随机高熵会话令牌，数据库仅保存 SHA-256 摘要。
 - 会话通过 `HttpOnly`、`SameSite=Strict` Cookie 传递。
 - 登录成功后不向浏览器 JavaScript 暴露会话令牌。
-- 写请求校验 `Origin` 和 `X-Requested-With` 请求头。
+- 写请求校验 `Origin` 和 `X-Requested-With` 请求头；生产环境缺失 `Origin` 直接拒绝（`MISSING_ORIGIN`）。
+- API 响应启用拒绝式 CSP，前端构建产物带文档级 CSP 与 SPA 深链回退。
+- 每个响应附带 `X-Request-Id`，错误按稳定错误码聚合到管理员监控面板。
+- 管理员操作（角色、Provider、默认模型、Research 内容）写入脱敏审计日志；过期会话定期清理。
 - 登录/注册与 API 请求速率限制。
 - Helmet 安全响应头、CORS 来源限制、JSON 请求体大小限制。
 - 项目查询均以当前用户 ID 作为数据范围，避免跨账户读写。
 - 管理 API 使用服务端角色校验。
 - 数据库外键约束和级联删除。
 
-正式公开部署前仍需补充：HTTPS 与反向代理配置、邮件验证、密码重置、隐私政策/服务条款、持久化速率限制存储、数据库备份与恢复、日志脱敏、依赖漏洞扫描、完整威胁建模及安全审计。Cookie 会话方案适合前后端部署在同一站点或同站子域；若部署在不同站点，需要重新设计跨站 Cookie 与 CSRF 机制。
+部署、备份恢复与安全响应头说明见 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)，本轮自动化验收记录见 [`docs/audits/B4-01-VERIFICATION.md`](docs/audits/B4-01-VERIFICATION.md)。
+
+正式公开部署前仍需补充：HTTPS 与反向代理配置、邮件验证、密码重置、隐私政策/服务条款、共享限流存储（多实例）、外部告警接入、独立渗透测试与 Android 真机验收。Cookie 会话方案适合前后端部署在同一站点或同站子域；若部署在不同站点，需要重新设计跨站 Cookie 与 CSRF 机制。
 
 ## 当前边界
 
@@ -216,9 +225,9 @@ API 集成测试会使用临时 SQLite 文件，不会覆盖你的开发数据�
 
 1. 示例 Research 内容是占位文章，发布前需人工审核、补充可核验资料。
 2. 定价页只是产品方案说明，没有支付、订阅或账单系统。
-3. Studio 当前管理项目元信息和 Markdown/纯文本内容，还没有文件上传、复杂画布或多人协作。
+3. Studio 管理项目元信息和 Markdown/纯文本内容；项目资料支持 TXT/MD/CSV/JSON 上传（需在项目资料页显式加入上下文）；Documents 支持自动保存、归档与恢复；尚无复杂画布或多人协作。
 4. 聊天已支持持久化会话、SSE 流式输出、停止生成、会话重命名、复制、编辑用户消息、末轮回答重新生成、回答历史查看与恢复，以及按模型上下文窗口进行输入预算和历史裁剪；Token 计数会区分本地分词估算、保守字节上界和未知来源，不等同于每个第三方供应商的原生计数。附件和工具调用仍未实现。
-5. 管理后台提供基础用户角色和 CMS 管理，不包含完整审计日志、封禁工作流或运营分析。
+5. 管理后台提供用户角色、Provider/模型管理、Research CMS、审计日志与错误监控，不包含封禁工作流或运营分析；错误监控为进程内聚合，重启清零且未外发告警。
 
 ## 产品基线与代码审计
 
@@ -229,6 +238,8 @@ API 集成测试会使用临时 SQLite 文件，不会覆盖你的开发数据�
 - [技术债清单](docs/audits/TECH-DEBT.md)
 - [安全与隐私审查](docs/audits/SECURITY-REVIEW.md)
 - [V0.1 开发任务与验收清单](docs/audits/V0.1-BACKLOG.md)
+- [部署、备份与恢复手册](docs/DEPLOYMENT.md)
+- [B4-01 安全/备份/设备验证记录](docs/audits/B4-01-VERIFICATION.md)
 
 ## 开发路线
 
