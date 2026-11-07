@@ -16,6 +16,7 @@
 | 错误监控 | 统一 `X-Request-Id`；错误按稳定错误码聚合并暴露管理员接口 | `error monitoring records stable codes and stays admin-only` |
 | SEC-04 备份恢复 | 在线备份 + 完整性校验 + sha256 清单 + 保留策略；恢复保留回滚副本 | `database backup verifies integrity and restores over the live file`；本机 CLI 演练 |
 | TD-19 E2E | 新增 `scripts/e2e-smoke.mjs`（puppeteer-core + 系统 Chromium），20 项浏览器检查 | 本机 20/20 通过；CI 新增 `browser-smoke` job |
+| 历史密钥扫描 | 新增 scripts/scan-secrets.mjs：扫描工作区全部跟踪文件与全部可达 Git blob，覆盖私钥、OpenAI/Anthropic/GitHub/AWS/Google/Slack/Stripe/Brave 令牌、JWT 与硬编码凭据赋值；CI 以 fetch-depth: 0 执行 | 本机全历史扫描 102 个文件 / 1778 个 blob，0 findings；植入假密钥自测返回 exit 1，清理后 exit 0 |
 | V0.2 文档归档 | 迁移 v10 `documents.archived_at`；列表 `archived=active\|archived\|all` + `archivedCount`；列表与编辑器均提供版本校验的归档/恢复 | `documents API enforces ownership, project isolation, validation, and optimistic concurrency`（含归档断言）；E2E 归档 → 已归档页 → 恢复三步 |
 | 部署形态 | `attachClientBuild()` 让 API 进程托管 `client/dist` 并回退 SPA 深链；客户端同源请求 | E2E 断言深链与注册后跳转 |
 
@@ -72,4 +73,5 @@ npm run build            # 生产构建
 npm run e2e              # 浏览器端到端（需 Chromium，可用 CHROMIUM_PATH 指定）
 npm run db:backup        # 备份 + 校验
 npm run db:verify        # 校验当前库或指定备份
+npm run scan:secrets     # 工作区 + Git 全历史密钥扫描
 ```

@@ -15,6 +15,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Full history so the secret scan can walk every reachable blob.
+          fetch-depth: 0
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -24,6 +27,8 @@ jobs:
         run: npm ci
       - name: Run API tests
         run: npm test
+      - name: Scan tracked files and Git history for secrets
+        run: npm run scan:secrets
       - name: Build web client
         run: npm run build
 
