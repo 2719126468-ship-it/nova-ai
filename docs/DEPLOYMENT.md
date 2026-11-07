@@ -20,7 +20,7 @@ NOVA 采用单进程部署：Express API 同时提供 `/api/v1` 与生产前端�
 |---|---|---|
 | `SESSION_SECRET` | 是 | ≥ 32 字符随机值；泄露等同于会话伪造 |
 | `PROVIDER_ENCRYPTION_KEY` | 管理 Provider 时必需 | ≥ 32 字符；用于 AES-256-GCM。丢失后数据库中的 Provider 密钥无法解密 |
-| `DB_PATH` | 否 | 默认 `server/data/nova.sqlite`；生产必须放在持久卷 |
+| `DB_PATH` | 否 | 默认 `server/data/nova.sqlite`；相对路径一律相对仓库根目录解析（API、`npm run -w server` 与脚本指向同一文件），生产建议用绝对路径放到持久卷 |
 | `WEB_ORIGIN` | 是 | 允许的前端来源，逗号分隔；生产必须是 HTTPS 正式域名 |
 | `AI_PROVIDERS_JSON` / `AI_BASE_URL` 等 | 否 | 环境 Provider，优先于数据库托管 Provider 且只读 |
 | `RESEARCH_SEARCH_PROVIDER` + `RESEARCH_SEARCH_URL` 或 `BRAVE_SEARCH_API_KEY` | 否 | 未配置时 Research 搜索返回 `RESEARCH_SEARCH_NOT_CONFIGURED`，不会伪造结果 |

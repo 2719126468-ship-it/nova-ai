@@ -11,3 +11,4 @@ backups/
 .tmp/
 .DS_Store
 *.log
+.runtime/

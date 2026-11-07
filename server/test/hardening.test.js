@@ -382,3 +382,22 @@ test('administrator can trigger a test alert and only admins can read alert stat
   }
 });
 
+
+test('relative DB_PATH resolves against the repository root from any working directory', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+  const configUrl = new URL('../src/config.js', import.meta.url).href;
+  const script = "process.env.DB_PATH='./server/data/nova.sqlite';import(" + JSON.stringify(configUrl) + ").then((m)=>console.log(m.config.dbPath))";
+  const expected = path.join(repoRoot, 'server/data/nova.sqlite');
+  for (const cwd of [repoRoot, path.join(repoRoot, 'server')]) {
+    const output = execFileSync(process.execPath, ['-e', script], {
+      cwd: cwd === repoRoot ? repoRoot : path.join(repoRoot, 'server'),
+      encoding: 'utf8',
+      env: { ...process.env, DB_PATH: './server/data/nova.sqlite' },
+    }).trim();
+    assert.equal(output, expected, 'cwd=' + cwd);
+  }
+});
+

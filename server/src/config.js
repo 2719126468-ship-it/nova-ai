@@ -3,13 +3,17 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const defaultDb = path.resolve(here, '../data/nova.sqlite');
+// Relative DB_PATH is resolved against the repository root, not process.cwd(),
+// so the API, the scripts and `npm run -w server` all address the same file.
+const repoRoot = path.resolve(here, '../..');
+const resolveDbPath = (value) => (path.isAbsolute(value) ? value : path.resolve(repoRoot, value));
 
 export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: Number(process.env.PORT || 4000),
   webOrigins: (process.env.WEB_ORIGIN || 'http://localhost:5173').split(',').map((origin) => origin.trim()).filter(Boolean),
   sessionSecret: process.env.SESSION_SECRET || '',
-  dbPath: process.env.DB_PATH ? path.resolve(process.cwd(), process.env.DB_PATH) : defaultDb,
+  dbPath: process.env.DB_PATH ? resolveDbPath(process.env.DB_PATH) : defaultDb,
   aiBaseUrl: (process.env.AI_BASE_URL || '').replace(/\/+$/, ''),
   aiApiKey: process.env.AI_API_KEY || '',
   aiModel: process.env.AI_MODEL || '',
