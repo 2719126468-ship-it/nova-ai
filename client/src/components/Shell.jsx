@@ -42,8 +42,8 @@ export default function Shell() {
     </header>
     <div className="route-content"><Outlet /></div>
     <footer className="site-footer">
-      <div className="footer-top"><Brand /><p>为好奇心而构建。<br />Intelligence for everyone.</p><div className="footer-links"><Link to="/research">研究</Link><Link to="/pricing">定价</Link><Link to="/developers">开发者</Link><Link to="/about">关于 NOVA</Link></div></div>
-      <div className="footer-bottom"><span>© {new Date().getFullYear()} NOVA AI. Independent product project.</span><span>Built for people who keep exploring.</span></div>
+      <div className="footer-top"><Brand /><p>为好奇心而构建。<br />Intelligence for everyone.</p><div className="footer-links"><Link to="/research">研究</Link><Link to="/pricing">定价</Link><Link to="/developers">开发者</Link><Link to="/about">关于 NOVA</Link><Link to="/privacy">数据与隐私</Link></div></div>
+      <div className="footer-bottom"><span>© {new Date().getFullYear()} NOVA AI. Independent product project.</span><span><Link to="/privacy">数据与第三方说明</Link> · Built for people who keep exploring.</span></div>
     </footer>
   </div>;
 }

@@ -1,0 +1,13 @@
+.privacy-page { padding-top: 54px; padding-bottom: 80px; }
+.privacy-sections { display: grid; gap: 14px; margin-top: 34px; }
+.privacy-section { padding: 22px 24px; background: var(--surface); border: 1px solid var(--line); }
+.privacy-section-heading { display: flex; align-items: center; gap: 10px; color: var(--accent-dark); }
+.privacy-section-heading h2 { margin: 0; font-size: 15px; letter-spacing: -.3px; color: var(--ink); }
+.privacy-section p { margin: 12px 0 0; color: var(--muted); font-size: 11px; line-height: 1.95; }
+.privacy-footnote { margin-top: 26px; padding: 18px 20px; border: 1px dashed var(--line-strong); }
+.privacy-footnote p { margin: 8px 0 0; color: var(--muted); font-size: 10px; line-height: 1.9; }
+@media (max-width: 600px) {
+  .privacy-page { padding-top: 36px; }
+  .privacy-section { padding: 17px 16px; }
+  .privacy-section p { font-size: 12px; }
+}

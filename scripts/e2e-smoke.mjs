@@ -179,6 +179,14 @@ async function main() {
       if (projectId) globalThis.__novaProjectId = projectId;
     }
 
+    // Data / third-party disclosure page must be publicly reachable.
+    await page.goto(baseUrl + '/privacy', { waitUntil: 'domcontentloaded' });
+    const privacyReady = await page.waitForFunction(
+      () => document.body.innerText.includes('哪些内容会发送给第三方模型服务'),
+      { timeout: 15000 },
+    ).then(() => true).catch(() => false);
+    check('Privacy and third-party disclosure page is reachable without login', privacyReady);
+
     // Research: real-search endpoint must report missing configuration honestly
     // and the synthesis box must not exist before results arrive.
     await page.goto(baseUrl + '/research', { waitUntil: 'domcontentloaded' });

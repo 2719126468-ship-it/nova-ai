@@ -21,6 +21,7 @@ const Pricing = lazy(() => import('./pages/Pricing'));
 const Developers = lazy(() => import('./pages/Developers'));
 const Admin = lazy(() => import('./pages/Admin'));
 const About = lazy(() => import('./pages/About'));
+const Privacy = lazy(() => import('./pages/Privacy'));
 const NotFound = lazy(() => import('./pages/About').then((module) => ({ default: module.NotFound })));
 
 function RouteLoading() {
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="pricing" element={<Pricing />} />
           <Route path="developers" element={<Developers />} />
           <Route path="about" element={<About />} />
+          <Route path="privacy" element={<Privacy />} />
           <Route path="login" element={<Auth />} />
           <Route path="register" element={<Auth />} />
           <Route element={<ProtectedRoute />}>
