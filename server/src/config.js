@@ -20,6 +20,9 @@ export const config = {
   researchSearchUrl: (process.env.RESEARCH_SEARCH_URL || '').trim(),
   braveSearchApiKey: process.env.BRAVE_SEARCH_API_KEY || '',
   researchSearchTimeoutMs: Number(process.env.RESEARCH_SEARCH_TIMEOUT_MS || 12000),
+  alertWebhookUrl: (process.env.ALERT_WEBHOOK_URL || '').trim(),
+  alertErrorThreshold: Number(process.env.ALERT_ERROR_THRESHOLD || 5),
+  alertCooldownMs: Number(process.env.ALERT_COOLDOWN_SECONDS || 600) * 1000,
   aiTimeoutMs: Number(process.env.AI_TIMEOUT_MS || 60000),
   aiMaxContextChars: Number(process.env.AI_MAX_CONTEXT_CHARS || 40000),
   aiContextOutputReserve: Number(process.env.AI_CONTEXT_OUTPUT_RESERVE || 2048),
@@ -47,5 +50,14 @@ export function assertConfig() {
   }
   if (!Number.isInteger(config.aiMaxContextChars) || config.aiMaxContextChars < 512 || config.aiMaxContextChars > 200000) {
     throw new Error('AI_MAX_CONTEXT_CHARS must be an integer between 512 and 200000.');
+  }
+  if (!Number.isInteger(config.alertErrorThreshold) || config.alertErrorThreshold < 1 || config.alertErrorThreshold > 1000) {
+    throw new Error('ALERT_ERROR_THRESHOLD must be an integer between 1 and 1000.');
+  }
+  if (!Number.isInteger(config.alertCooldownMs) || config.alertCooldownMs < 60000 || config.alertCooldownMs > 24 * 60 * 60 * 1000) {
+    throw new Error('ALERT_COOLDOWN_SECONDS must be between 60 and 86400.');
+  }
+  if (config.alertWebhookUrl && !/^https:\/\//.test(config.alertWebhookUrl) && config.nodeEnv === 'production') {
+    throw new Error('ALERT_WEBHOOK_URL must use HTTPS in production.');
   }
 }

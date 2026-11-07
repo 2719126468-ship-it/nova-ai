@@ -12,6 +12,7 @@ import { requireAuth, requireAdmin } from './middleware/auth.js';
 import { discoverProviderModels, probeModel } from './services/model-health.js';
 import { requireAppRequest, apiCspDirectives, webDocumentCsp } from './middleware/security.js';
 import { newRequestId, recordError } from './services/monitoring.js';
+import { maybeAlert } from './services/alerts.js';
 import authRoutes from './routes/auth.js';
 import projectRoutes from './routes/projects.js';
 import projectContextRoutes from './routes/project-context.js';
@@ -173,6 +174,7 @@ export function createApp() {
     if (res.headersSent) return next(error);
     if (error?.code && error?.status) {
       recordError({ code: error.code, status: error.status, route: req.originalUrl, requestId: req.requestId });
+      maybeAlert(error.code);
       return res.status(error.status).json({
         error: error.code,
         message: error.message,
@@ -184,6 +186,7 @@ export function createApp() {
       return res.status(413).json({ error: 'PAYLOAD_TOO_LARGE', message: '请求内容过大。', requestId: req.requestId });
     }
     recordError({ code: 'INTERNAL_ERROR', status: 500, route: req.originalUrl, requestId: req.requestId });
+    maybeAlert('INTERNAL_ERROR');
     console.error('[NOVA API]', error?.message || error);
     res.status(500).json({ error: 'INTERNAL_ERROR', message: '服务器发生错误，请稍后重试。', requestId: req.requestId });
   });

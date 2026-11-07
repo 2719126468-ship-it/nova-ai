@@ -25,6 +25,8 @@ NOVA 采用单进程部署：Express API 同时提供 `/api/v1` 与生产前端�
 | `AI_PROVIDERS_JSON` / `AI_BASE_URL` 等 | 否 | 环境 Provider，优先于数据库托管 Provider 且只读 |
 | `RESEARCH_SEARCH_PROVIDER` + `RESEARCH_SEARCH_URL` 或 `BRAVE_SEARCH_API_KEY` | 否 | 未配置时 Research 搜索返回 `RESEARCH_SEARCH_NOT_CONFIGURED`，不会伪造结果 |
 | `BACKUP_DIR` / `BACKUP_KEEP` | 否 | 备份目录与保留份数，默认 `backups/`、7 份 |
+| `ALERT_WEBHOOK_URL` | 否 | 外部告警 webhook；生产必须 HTTPS，留空则不发送 |
+| `ALERT_ERROR_THRESHOLD` / `ALERT_COOLDOWN_SECONDS` | 否 | 同一错误码触发阈值（默认 5 次）与冷却（默认 600 秒） |
 
 生产环境启动时会强制校验：`NODE_ENV=production` 下 Provider 基础地址必须是 HTTPS；变更请求必须携带受信任 `Origin`。
 
@@ -76,8 +78,8 @@ npm run db:verify
 
 ## 8. 上线前仍必须完成
 
-1. 真实第三方模型的提示词/文件处理告知（SEC-07）。
-2. 独立安全测试与完整 Git 历史密钥扫描。
-3. 多实例部署前的共享限流/并发存储（当前为进程内存）。
-4. Android 真机（含 Mate 20 Pro）上的登录、聊天、自动保存、文件上传与下载验收。
-5. 生产日志告警接入（当前错误监控只在进程内聚合）。
+1. 独立安全测试与完整 Git 历史密钥扫描之外的渗透测试（自动化基线已具备）。
+2. 多实例部署前的共享限流/并发存储（当前为进程内存）。
+3. Android 真机（含 Mate 20 Pro）上的触摸、软键盘、文件选择器与下载验收。
+4. 部署侧配置真实 `ALERT_WEBHOOK_URL` 并验证送达（已提供阈值/冷却与 Admin 测试按钮）。
+5. 部署者按当地法规补充数据控制者联系方式与合规条款（`/privacy` 页已提供披露框架）。

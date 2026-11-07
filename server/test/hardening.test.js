@@ -240,3 +240,145 @@ test('model health snapshots expire and never expose credentials through the cat
   assert.equal(rows, 1);
 });
 
+
+test('alert webhook fires once per threshold/cooldown and carries metadata only', async () => {
+  const { createServer } = await import('node:http');
+  const alerts = await import('../src/services/alerts.js');
+  const monitoring = await import('../src/services/monitoring.js');
+  const previous = {
+    url: config.alertWebhookUrl,
+    threshold: config.alertErrorThreshold,
+    cooldown: config.alertCooldownMs,
+  };
+  const received = [];
+  const hook = createServer((incoming, outgoing) => {
+    let body = '';
+    incoming.setEncoding('utf8');
+    incoming.on('data', (chunk) => { body += chunk; });
+    incoming.on('end', () => {
+      received.push({ url: incoming.url, body: JSON.parse(body || '{}'), contentType: incoming.headers['content-type'] });
+      outgoing.writeHead(204);
+      outgoing.end();
+    });
+  });
+  await new Promise((resolve) => hook.listen(0, '127.0.0.1', resolve));
+  try {
+    monitoring.resetMonitoring();
+    alerts.resetAlertState();
+    config.alertWebhookUrl = 'http://127.0.0.1:' + hook.address().port + '/hook';
+    config.alertErrorThreshold = 3;
+    config.alertCooldownMs = 60000;
+
+    monitoring.recordError({ code: 'AI_PROVIDER_UNAVAILABLE', status: 502, route: '/api/v1/conversations/1/messages/stream', requestId: 'req-1' });
+    monitoring.recordError({ code: 'AI_PROVIDER_UNAVAILABLE', status: 502, route: '/api/v1/conversations/1/messages/stream', requestId: 'req-2' });
+    assert.equal(alerts.maybeAlert('AI_PROVIDER_UNAVAILABLE'), null, 'must stay quiet below the threshold');
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(received.length, 0);
+
+    monitoring.recordError({ code: 'AI_PROVIDER_UNAVAILABLE', status: 502, route: '/api/v1/conversations/1/messages/stream', requestId: 'req-3' });
+    const payload = alerts.maybeAlert('AI_PROVIDER_UNAVAILABLE');
+    assert.ok(payload, 'threshold reached should produce a payload');
+    assert.equal(payload.code, 'AI_PROVIDER_UNAVAILABLE');
+    assert.equal(payload.count, 3);
+    assert.equal(payload.lastStatus, 502);
+    assert.equal(payload.severity, 'error');
+    assert.ok(Array.isArray(payload.routes) && payload.routes.length === 1);
+
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    assert.equal(received.length, 1);
+    assert.equal(received[0].url, '/hook');
+    assert.match(received[0].contentType, /application\/json/);
+    const body = received[0].body;
+    assert.equal(body.code, 'AI_PROVIDER_UNAVAILABLE');
+    const serialized = JSON.stringify(body);
+    assert.equal(serialized.includes('Bearer'), false);
+    assert.equal(serialized.includes('sk-'), false);
+    // The payload's own disclaimer mentions prompts; what matters is that no
+    // user content or credential shape is present.
+    assert.equal(serialized.includes('req-'), false, 'request ids must not be forwarded');
+    assert.equal(serialized.includes('Bearer'), false);
+    assert.equal(serialized.includes('sk-'), false);
+
+    // Cooldown suppresses the next alert for the same code.
+    monitoring.recordError({ code: 'AI_PROVIDER_UNAVAILABLE', status: 502, route: '/api/v1/x', requestId: 'req-4' });
+    assert.equal(alerts.maybeAlert('AI_PROVIDER_UNAVAILABLE'), null, 'cooldown must suppress repeats');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(received.length, 1);
+
+    const state = alerts.alertState();
+    assert.equal(state.configured, true);
+    assert.equal(state.threshold, 3);
+    assert.equal(state.recent.length, 1);
+    assert.equal(state.recent[0].ok, true);
+
+    // Unconfigured webhook must not throw and must not deliver anything.
+    config.alertWebhookUrl = '';
+    monitoring.recordError({ code: 'INTERNAL_ERROR', status: 500, route: '/api/v1/x', requestId: 'req-5' });
+    assert.equal(alerts.maybeAlert('INTERNAL_ERROR'), null);
+    assert.equal(alerts.alertState().configured, false);
+    await assert.rejects(() => alerts.sendTestAlert(), (error) => error.code === 'ALERT_WEBHOOK_NOT_CONFIGURED');
+  } finally {
+    config.alertWebhookUrl = previous.url;
+    config.alertErrorThreshold = previous.threshold;
+    config.alertCooldownMs = previous.cooldown;
+    alerts.resetAlertState();
+    monitoring.resetMonitoring();
+    await new Promise((resolve) => hook.close(resolve));
+  }
+});
+
+test('administrator can trigger a test alert and only admins can read alert state', async () => {
+  const { createServer } = await import('node:http');
+  const alerts = await import('../src/services/alerts.js');
+  const previous = { url: config.alertWebhookUrl };
+  const received = [];
+  const hook = createServer((incoming, outgoing) => {
+    let body = '';
+    incoming.setEncoding('utf8');
+    incoming.on('data', (chunk) => { body += chunk; });
+    incoming.on('end', () => {
+      received.push(JSON.parse(body || '{}'));
+      outgoing.writeHead(200, { 'Content-Type': 'application/json' });
+      outgoing.end('{"ok":true}');
+    });
+  });
+  await new Promise((resolve) => hook.listen(0, '127.0.0.1', resolve));
+  try {
+    alerts.resetAlertState();
+    config.alertWebhookUrl = 'http://127.0.0.1:' + hook.address().port + '/hook';
+
+    const admin = request.agent(app);
+    await admin.post('/api/v1/auth/register').set(originHeaders).send({
+      email: 'alert-admin@example.com', name: 'Alert Admin', password: 'alert-admin-password-strong',
+    }).expect(201);
+    db.prepare("UPDATE users SET role='admin' WHERE email='alert-admin@example.com'").run();
+    await admin.post('/api/v1/auth/login').set(originHeaders).send({
+      email: 'alert-admin@example.com', password: 'alert-admin-password-strong',
+    }).expect(200);
+
+    const monitoringReport = await admin.get('/api/v1/admin/monitoring').expect(200);
+    assert.equal(monitoringReport.body.alerts.configured, true);
+
+    const test = await admin.post('/api/v1/admin/alerts/test').set(originHeaders).expect(200);
+    assert.equal(test.body.delivered, true);
+    assert.equal(test.body.status, 200);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    assert.equal(received.length, 1);
+    assert.equal(received[0].code, 'ALERT_TEST');
+
+    const auditLogs = await admin.get('/api/v1/admin/audit-logs?limit=10').expect(200);
+    assert.ok(auditLogs.body.logs.some((entry) => entry.action === 'alert.test_sent'));
+
+    const regular = request.agent(app);
+    await regular.post('/api/v1/auth/register').set(originHeaders).send({
+      email: 'alert-regular@example.com', name: 'Alert Regular', password: 'alert-regular-password-strong',
+    }).expect(201);
+    await regular.post('/api/v1/admin/alerts/test').set(originHeaders).expect(403);
+    await regular.get('/api/v1/admin/monitoring').expect(403);
+  } finally {
+    config.alertWebhookUrl = previous.url;
+    alerts.resetAlertState();
+    await new Promise((resolve) => hook.close(resolve));
+  }
+});
+

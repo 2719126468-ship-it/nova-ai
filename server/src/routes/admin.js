@@ -7,6 +7,7 @@ import { decryptProviderSecret, encryptProviderSecret } from '../services/provid
 import { getModelRegistry } from '../services/model-registry.js';
 import { listAuditLogs, recordAdminAction } from '../services/audit.js';
 import { errorSnapshot } from '../services/monitoring.js';
+import { alertState, sendTestAlert } from '../services/alerts.js';
 
 const providerIdSchema = z.string().trim().regex(/^[a-zA-Z0-9_-]{1,64}$/);
 const modelSchema = z.object({
@@ -219,7 +220,27 @@ router.get('/audit-logs', (req, res) => {
 
 router.get('/monitoring', (req, res) => {
   res.set('Cache-Control', 'no-store');
-  res.json({ errors: errorSnapshot(25), uptimeSeconds: Math.round(process.uptime()) });
+  res.json({
+    errors: errorSnapshot(25),
+    alerts: alertState(),
+    uptimeSeconds: Math.round(process.uptime()),
+  });
+});
+
+router.post('/alerts/test', async (req, res, next) => {
+  try {
+    const result = await sendTestAlert();
+    recordAdminAction({
+      actorUserId: req.user.id,
+      action: 'alert.test_sent',
+      targetType: 'alert_webhook',
+      targetId: null,
+      metadata: { delivered: result.delivered, status: result.status },
+    });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.get('/providers', (req, res) => {

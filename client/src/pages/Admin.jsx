@@ -19,6 +19,7 @@ export default function Admin() {
   const [showEditor, setShowEditor] = useState(false);
   const [auditLogs, setAuditLogs] = useState([]);
   const [monitoring, setMonitoring] = useState(null);
+  const [sendingTestAlert, setSendingTestAlert] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -39,6 +40,21 @@ export default function Admin() {
     try { await api(`/api/admin/users/${member.id}/role`, { method: 'PATCH', body: json({ role }) }); await load(); }
     catch (e) { setError(e.message); }
   }
+  async function sendTestAlert() {
+    if (sendingTestAlert) return;
+    setSendingTestAlert(true);
+    setError('');
+    try {
+      const result = await api('/api/v1/admin/alerts/test', { method: 'POST', body: json({}) });
+      setError(result.delivered ? '' : '测试告警未送达：' + (result.error || ('HTTP ' + result.status)));
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSendingTestAlert(false);
+    }
+  }
+
   function createArticle() { setArticle({ ...blankArticle, id: null }); setShowEditor(true); }
   function editArticle(item) { setArticle({ ...item, body: item.body || '' }); setShowEditor(true); }
   async function saveArticle(event) {
@@ -69,6 +85,18 @@ export default function Admin() {
           </tbody></table></div>}</>}
         {tab === 'monitoring' && <><div className="admin-panel-heading"><div><span className="eyebrow">RELIABILITY / ERROR MONITORING</span><h2>错误监控</h2></div><span className="table-count">进程运行 {monitoring?.uptimeSeconds ?? 0}s</span></div>
           <p className="admin-panel-note">按稳定错误码统计进程启动以来的失败请求，只保留类别、状态码、路由与请求 ID；不保存提示词、回答正文或密钥。进程重启后计数清零。</p>
+          <div className="admin-table-card">
+            <div className="admin-table-heading">
+              <h3>外部告警 {monitoring?.alerts?.configured ? '已启用' : '未配置'}</h3>
+              <button type="button" onClick={sendTestAlert} disabled={sendingTestAlert || !monitoring?.alerts?.configured}>
+                {sendingTestAlert ? '发送中…' : '发送测试告警'}
+              </button>
+            </div>
+            <p className="admin-panel-note">阈值 {monitoring?.alerts?.threshold ?? '—'} 次 / 冷却 {monitoring?.alerts?.cooldownSeconds ?? '—'} 秒。webhook 只接收错误码、次数、状态码、路由与运行时长；在服务器设置 ALERT_WEBHOOK_URL 后生效。</p>
+            {monitoring?.alerts?.recent?.length ? <div className="admin-table-scroll"><table className="admin-table"><thead><tr><th>时间</th><th>错误码</th><th>结果</th></tr></thead><tbody>
+              {monitoring.alerts.recent.map((item, index) => <tr key={item.at + index}><td>{new Date(item.at).toLocaleString()}</td><td><code>{item.code}</code></td><td>{item.ok ? '已送达' : '失败'} {item.status ? '· HTTP ' + item.status : ''}{item.error ? ' · ' + item.error : ''}</td></tr>)}
+            </tbody></table></div> : <div className="table-empty">还没有发送过告警。</div>}
+          </div>
           <div className="admin-stats-grid"><div><AlertTriangle size={18} /><span>错误总数</span><strong>{monitoring?.errors?.totalErrors ?? 0}</strong><small>自进程启动</small></div><div><Activity size={18} /><span>错误类别</span><strong>{monitoring?.errors?.codes?.length ?? 0}</strong><small>去重后的稳定错误码</small></div></div>
           {!monitoring?.errors?.codes?.length ? <div className="table-empty">当前没有记录到错误。</div> : <div className="admin-table-scroll"><table className="admin-table"><thead><tr><th>错误码</th><th>次数</th><th>最近状态码</th><th>最近时间</th><th>路由</th></tr></thead><tbody>
             {monitoring.errors.codes.map((item) => <tr key={item.code}><td><code>{item.code}</code></td><td>{item.count}</td><td>{item.lastStatus ?? '—'}</td><td>{item.lastAt ? new Date(item.lastAt).toLocaleString() : '—'}</td><td><small>{(item.routes || []).join(', ') || '—'}</small></td></tr>)}

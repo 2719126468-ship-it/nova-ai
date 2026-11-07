@@ -342,9 +342,14 @@ Both endpoints require an authenticated administrator session and are `Cache-Con
 | Method | Path | Purpose |
 |---|---|---|
 | GET | /api/v1/admin/audit-logs?limit=1-200 | Recent privileged actions (role changes, provider create/update/delete, default model, Research article writes) |
-| GET | /api/v1/admin/monitoring | In-process error aggregates plus uptime |
+| GET | /api/v1/admin/monitoring | In-process error aggregates, alert webhook state and uptime |
+| POST | /api/v1/admin/alerts/test | Send a test alert to the configured webhook |
 
 Audit entries contain `id`, `actorUserId`, `actorEmail`, `actorName`, `action`, `targetType`, `targetId`, `metadata` and `createdAt`. Metadata is sanitized before storage: fields whose names look like credentials, tokens, passwords, cookies, encrypted blobs, base URLs or user content are dropped, strings are truncated to 300 characters, and nesting is capped. Audit writes never fail the request path.
+
+`POST /api/v1/admin/alerts/test` delivers a metadata-only test payload to `ALERT_WEBHOOK_URL` and returns `{ configured, delivered, status, error }`; without a webhook it returns 503 `ALERT_WEBHOOK_NOT_CONFIGURED`. The action is written to the audit log.
+
+`/monitoring` also returns `alerts` (`configured`, `threshold`, `cooldownSeconds`, `recent[]`). Alerts fire when one error code reaches `ALERT_ERROR_THRESHOLD` inside the process and no alert for that code was sent within `ALERT_COOLDOWN_SECONDS`; the webhook receives only `service`, `severity`, `code`, `count`, `lastStatus`, `lastAt`, `routes`, `windowSeconds`, `uptimeSeconds`.
 
 `/monitoring` returns `errors.totalErrors`, `errors.codes[]` (`code`, `count`, `lastStatus`, `lastAt`, `routes`), `errors.recent[]` (`requestId`, `code`, `status`, `route`, `at`) and `uptimeSeconds`. Counters are process-local and reset on restart. Every API response carries an `X-Request-Id` header; error responses echo the same value as `requestId`.
 
