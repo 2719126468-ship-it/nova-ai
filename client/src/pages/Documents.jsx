@@ -20,14 +20,31 @@ export function Documents() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
 
+  const fetchDocuments = useCallback(async () => {
+    const result = await api('/api/v1/documents?limit=100');
+    return Array.isArray(result.documents) ? result.documents : [];
+  }, []);
+
   useEffect(() => {
     let active = true;
-    api('/api/v1/documents?limit=100')
-      .then((result) => { if (active) setDocuments(result.documents || []); })
+    fetchDocuments()
+      .then((items) => { if (active) setDocuments(items); })
       .catch((cause) => { if (active) setError(cause.message); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [fetchDocuments]);
+
+  async function refreshDocuments() {
+    setLoading(true);
+    setError('');
+    try {
+      setDocuments(await fetchDocuments());
+    } catch (cause) {
+      setError(cause.message);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function createDocument() {
     if (creating) return;
@@ -72,7 +89,7 @@ export function Documents() {
           {creating ? <LoaderCircle size={15} className="spin" /> : <FilePlus2 size={15} />}
           新建文档
         </Button>
-        <button className="documents-icon-button" type="button" onClick={() => load().catch((cause) => setError(cause.message))} aria-label="刷新文档列表"><RefreshCw size={15} /></button>
+        <button className="documents-icon-button" type="button" onClick={refreshDocuments} disabled={loading} aria-label="刷新文档列表"><RefreshCw size={15} /></button>
       </div>
     </section>
     <ErrorNotice>{error}</ErrorNotice>
@@ -113,6 +130,7 @@ export function DocumentEditor() {
   const numericId = Number(id);
   const [document, setDocument] = useState(null);
   const [projects, setProjects] = useState([]);
+  const [projectLoadError, setProjectLoadError] = useState('');
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [projectId, setProjectId] = useState('');
@@ -158,12 +176,13 @@ export function DocumentEditor() {
       setLoading(false);
       return () => { active = false; };
     }
-    Promise.all([
+    Promise.allSettled([
       api('/api/v1/documents/' + numericId),
       api('/api/projects'),
     ]).then(([documentResult, projectResult]) => {
       if (!active) return;
-      const item = documentResult.document;
+      if (documentResult.status !== 'fulfilled') throw documentResult.reason;
+      const item = documentResult.value.document;
       setDocument(item);
       setTitle(item.title);
       setContent(item.content);
@@ -172,8 +191,12 @@ export function DocumentEditor() {
       versionRef.current = item.version;
       savedSnapshotRef.current = makeSnapshot(item);
       setLastSavedAt(item.updatedAt);
-      setProjects(projectResult.projects || []);
       setSaveStatus('saved');
+      if (projectResult.status === 'fulfilled') {
+        setProjects(projectResult.value.projects || []);
+      } else {
+        setProjectLoadError('项目列表暂时无法读取；文档仍可编辑并自动保存，但暂时无法更改项目关联。');
+      }
     }).catch((cause) => {
       if (active) setError(cause.message);
     }).finally(() => {
@@ -239,7 +262,18 @@ export function DocumentEditor() {
     if (!dirty && saveStatus === 'pending') setSaveStatus('saved');
   }, [dirty, saveStatus]);
 
+  useEffect(() => {
+    if (!dirty && !saving) return undefined;
+    const warnBeforeLeaving = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
+  }, [dirty, saving]);
+
   async function reloadLatest() {
+    if (dirty && !window.confirm('读取最新版本会替换当前编辑器中的本地内容。建议先另存为副本。仍要继续吗？')) return;
     setLoading(true);
     try {
       await loadDocument();
@@ -313,10 +347,10 @@ export function DocumentEditor() {
       <div className="document-editor-actions">
         <Button variant="outline" onClick={downloadMarkdown}><Download size={14} /> 导出 .md</Button>
         <Button variant="outline" onClick={saveAsCopy} disabled={copying || saving}><FilePlus2 size={14} /> 另存为副本</Button>
-        <button type="button" className="documents-icon-button danger" onClick={deleteDocument} aria-label="删除文档"><Trash2 size={15} /></button>
+        <button type="button" className="documents-icon-button danger" onClick={deleteDocument} disabled={saving || dirty} aria-label="删除文档" title={saving || dirty ? '请先等待自动保存完成' : '删除文档'}><Trash2 size={15} /></button>
       </div>
     </div>
-    <ErrorNotice>{error}</ErrorNotice>
+    <ErrorNotice>{error || projectLoadError}</ErrorNotice>
     {conflict && <div className="document-conflict-banner" role="alert">
       <div><strong>这篇文档已经在其他位置更新。</strong><p>{conflict.message} 你当前的本地内容仍保留在编辑器中。</p></div>
       <div><Button variant="outline" onClick={saveAsCopy} disabled={copying}>{copying ? '正在创建…' : '将本地内容另存为副本'}</Button><Button onClick={reloadLatest}>读取最新版本</Button></div>
@@ -329,7 +363,7 @@ export function DocumentEditor() {
       <input className="document-title-input" value={title} onChange={(event) => setTitle(event.target.value)} maxLength={120} aria-label="文档标题" placeholder="给这篇文档起个名字…" />
       <div className="document-editor-subbar">
         <label className="document-project-select"><FolderOpen size={14} /><span>保存到项目</span>
-          <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+          <select value={projectId} onChange={(event) => setProjectId(event.target.value)} disabled={Boolean(projectLoadError)}>
             <option value="">个人文档</option>
             {projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}
           </select>
