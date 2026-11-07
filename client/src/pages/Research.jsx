@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowUpRight, BookOpen, Check, ExternalLink, FilePlus2, LoaderCircle, Search } from 'lucide-react';
+import { ArrowUpRight, BookOpen, ExternalLink, FilePlus2, LoaderCircle, Search } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, json } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
@@ -86,7 +86,7 @@ export default function Research() {
   function buildResearchMarkdown() {
     const reportTitle = '网络研究：' + webQuery.trim();
     const sections = [
-      '# ' + reportTitle,
+      '# ' + safeMarkdownText(reportTitle),
       '',
       '> 检索时间：' + (searchMeta?.retrievedAt || new Date().toISOString()),
       '> 搜索关键词：' + webQuery.trim(),
@@ -142,9 +142,9 @@ export default function Research() {
 
   return <main className="page-wrap container-wide research-page">
     <PageIntro eyebrow="NOVA RESEARCH / IDEAS & EVIDENCE" title={<>从检索开始，<br />让观点有据可循。</>} description="浏览 NOVA 编辑文章，或使用已配置的真实搜索服务查找外部来源。网络检索结果会保留原始链接，便于核验和整理。" />
-    <div className="research-view-tabs" role="tablist" aria-label="Research 内容类型">
-      <button type="button" role="tab" aria-selected={activeView === 'articles'} className={activeView === 'articles' ? 'active' : ''} onClick={() => setActiveView('articles')}><BookOpen size={15} /> 精选文章</button>
-      <button type="button" role="tab" aria-selected={activeView === 'web'} className={activeView === 'web' ? 'active' : ''} onClick={() => setActiveView('web')}><Search size={15} /> 网络研究</button>
+    <div className="research-view-tabs" role="group" aria-label="Research 内容类型">
+      <button type="button" aria-pressed={activeView === 'articles'} className={activeView === 'articles' ? 'active' : ''} onClick={() => setActiveView('articles')}><BookOpen size={15} /> 精选文章</button>
+      <button type="button" aria-pressed={activeView === 'web'} className={activeView === 'web' ? 'active' : ''} onClick={() => setActiveView('web')}><Search size={15} /> 网络研究</button>
     </div>
 
     {activeView === 'articles' ? <>
