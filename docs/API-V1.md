@@ -309,6 +309,7 @@ Administrators can read the latest records and aggregate totals through `GET /ap
 | GET | /api/v1/research | List published Research articles (public) |
 | GET | /api/v1/research/:slug | Read one published article (public) |
 | POST | /api/v1/research/search | Run a real web search (authenticated, 8 requests/user/minute) |
+| POST | /api/v1/research/synthesize | Draft a cited research brief from user-selected sources (authenticated, 8 requests/user/minute) |
 | POST | /api/v1/research | Create an article (administrator only) |
 | PUT | /api/v1/research/:id | Update an article (administrator only) |
 | DELETE | /api/v1/research/:id | Delete an article (administrator only) |
@@ -329,6 +330,8 @@ Search requires server-side configuration: `RESEARCH_SEARCH_PROVIDER=searxng` pl
 | RESEARCH_SEARCH_RESPONSE_TOO_LARGE | 502 | Response exceeded the 1.5 MB read cap |
 | RESEARCH_SEARCH_INVALID_RESPONSE | 502 | Provider returned malformed JSON or an unreadable body |
 | RESEARCH_SEARCH_RATE_LIMITED | 429 | The authenticated user exceeded 8 searches/minute |
+
+`POST /api/v1/research/synthesize` body: `{ "query": "2-300 chars", "notes": "<=4000 chars", "modelId": "optional", "sources": [{ "title", "url", "snippet", "publishedAt" }] }` with 1–10 sources. The server asks the configured model to write a short brief that must cite source indexes; sources are re-validated (HTTP/HTTPS only, no embedded credentials, deduplicated) and only the first 1200 characters of each snippet are sent. The response contains `synthesis`, `sourceCount`, `modelId`, `generatedAt` and `disclosure`, and is always model synthesis — the client stores it in a separate labelled section. Without a configured model it returns 503 `AI_PROVIDER_NOT_CONFIGURED` rather than inventing text.
 
 Search results are retrieval material, not verified facts. The client lets users pick sources, attach notes, and save a Markdown record with retrieval time, snippets, URLs and citation indexes into their own Documents.
 

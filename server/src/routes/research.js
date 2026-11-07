@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { rateLimit } from 'express-rate-limit';
 import { searchWeb } from '../services/research-search.js';
+import { ResearchSynthesisError, synthesizeResearch } from '../services/research-synthesis.js';
 import { db } from '../db.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { recordAdminAction } from '../services/audit.js';
@@ -41,6 +42,36 @@ router.post('/search', requireAuth, searchLimiter, async (req, res, next) => {
     return res.json(result);
   } catch (error) {
     return next(error);
+  }
+});
+
+const synthesisSchema = z.object({
+  query: z.string().trim().min(2).max(300),
+  notes: z.string().max(4000).optional().default(''),
+  modelId: z.string().trim().min(1).max(120).optional(),
+  sources: z.array(z.object({
+    title: z.string().trim().min(1).max(300),
+    url: z.string().trim().max(2000),
+    snippet: z.string().max(1200).optional().default(''),
+    publishedAt: z.string().max(100).nullable().optional(),
+  })).min(1).max(10),
+});
+
+router.post('/synthesize', requireAuth, searchLimiter, async (req, res, next) => {
+  const parsed = synthesisSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      message: '需要 2–300 字符的研究问题、1–10 条带标题和链接的来源，笔记不超过 4000 字符。',
+    });
+  }
+  res.set('Cache-Control', 'no-store');
+  try {
+    const result = await synthesizeResearch(parsed.data);
+    res.json(result);
+  } catch (error) {
+    if (error instanceof ResearchSynthesisError) return next(error);
+    next(error);
   }
 });
 

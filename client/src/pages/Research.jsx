@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowUpRight, BookOpen, ExternalLink, FilePlus2, LoaderCircle, Search } from 'lucide-react';
+import { ArrowUpRight, BookOpen, ExternalLink, FilePlus2, LoaderCircle, Search, Sparkles } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, json } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
-import { Eyebrow, Loading, PageIntro, ErrorNotice, EmptyState } from '../components/UI';
+import { Button, Eyebrow, Loading, PageIntro, ErrorNotice, EmptyState } from '../components/UI';
 
 function safeMarkdownText(value) {
   return String(value || '').replace(/[\\\\`*_{}[\]()#+.!|>~-]/g, '\\\\$&');
@@ -27,6 +27,9 @@ export default function Research() {
   const [notesBySource, setNotesBySource] = useState({});
   const [savingReport, setSavingReport] = useState(false);
   const [synthesis, setSynthesis] = useState('');
+  const [drafting, setDrafting] = useState(false);
+  const [draftError, setDraftError] = useState('');
+  const [draftModel, setDraftModel] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -60,6 +63,8 @@ export default function Research() {
     setSelectedSourceIds([]);
     setNotesBySource({});
     setSynthesis('');
+    setDraftError('');
+    setDraftModel(null);
     setSearchMeta(null);
     try {
       const result = await api('/api/v1/research/search', {
@@ -76,6 +81,35 @@ export default function Research() {
       setSearchError(cause.message || '真实搜索请求失败，请稍后重试。');
     } finally {
       setSearchLoading(false);
+    }
+  }
+
+  async function draftSynthesis() {
+    if (!selectedSources.length || drafting) return;
+    setDrafting(true);
+    setDraftError('');
+    try {
+      const result = await api('/api/v1/research/synthesize', {
+        method: 'POST',
+        body: json({
+          query: webQuery.trim(),
+          notes: selectedSources.map((source) => (notesBySource[source.id] || '').trim()).filter(Boolean).join('\n'),
+          sources: selectedSources.map((source) => ({
+            title: source.title,
+            url: source.url,
+            snippet: source.snippet || '',
+            publishedAt: source.publishedAt || null,
+          })),
+        }),
+      });
+      setSynthesis(result.synthesis || '');
+      setDraftModel({ modelId: result.modelId, generatedAt: result.generatedAt, disclosure: result.disclosure });
+    } catch (cause) {
+      setDraftError(cause.code === 'AI_PROVIDER_NOT_CONFIGURED'
+        ? '尚未配置可用模型，无法生成研究草稿。你仍可以手动填写综合分析。'
+        : (cause.message || '生成研究草稿失败，请稍后重试。'));
+    } finally {
+      setDrafting(false);
     }
   }
 
@@ -123,6 +157,10 @@ export default function Research() {
     sections.push('');
     const synthesisText = synthesis.trim();
     if (synthesisText) {
+      if (draftModel) {
+        sections.push('> 生成方式：模型 ' + (draftModel.modelId || '服务端默认模型') + ' 根据上方检索摘要生成（' + draftModel.generatedAt + '）。这是模型综合，不是已核验事实。');
+        sections.push('');
+      }
       sections.push(synthesisText.split(/\r?\n/).map((line) => safeMarkdownText(line)).join('  \n'));
     } else {
       sections.push('（尚未填写。此节用于区分作者或模型推断与上方的检索资料。）');
@@ -225,7 +263,14 @@ export default function Research() {
             onChange={(event) => setSynthesis(event.target.value)}
             placeholder="写下你基于这些来源的判断。保存后会与检索资料分开标注，不表示已核验事实。"
           />
-          <small>{synthesis.length.toLocaleString()} / 4,000 · 这一节会被明确标注为“未证实，需逐条核对来源”。</small>
+          <div className="research-synthesis-actions">
+            <Button type="button" variant="outline" onClick={draftSynthesis} disabled={drafting || !selectedSources.length}>
+              {drafting ? <><LoaderCircle size={14} className="spin" /> 正在生成…</> : <><Sparkles size={14} /> 用所选来源生成草稿</>}
+            </Button>
+            <small>{synthesis.length.toLocaleString()} / 4,000 · 生成内容会标注为模型综合，不会写成已核验事实。</small>
+          </div>
+          {draftModel && <small className="research-synthesis-disclosure">草稿来自 {draftModel.modelId || '服务端默认模型'}，生成于 {new Date(draftModel.generatedAt).toLocaleString()}。{draftModel.disclosure}</small>}
+          {draftError && <p className="research-synthesis-error" role="alert">{draftError}</p>}
         </section>
         <div className="research-organize-bar">
           <span>已选择 {selectedSources.length} / {searchResults.length} 条来源</span>

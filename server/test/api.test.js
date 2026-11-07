@@ -2415,3 +2415,84 @@ test('model discovery and persisted health snapshots stay admin-only and redact 
   }
 });
 
+
+test('research synthesis cites selected sources, labels itself as model output, and never fabricates without a provider', async () => {
+  const previous = { aiBaseUrl: config.aiBaseUrl, aiApiKey: config.aiApiKey, aiModel: config.aiModel };
+  let synthesisServer;
+  let receivedBody = null;
+  try {
+    config.aiBaseUrl = '';
+    config.aiApiKey = '';
+    config.aiModel = '';
+
+    const agent = request.agent(app);
+    await agent.post('/api/v1/auth/register').set(originHeaders).send({
+      email: 'synthesis-user@example.com', name: 'Synthesis User', password: 'synthesis-user-password-strong',
+    }).expect(201);
+
+    const payload = {
+      query: 'NOVA research synthesis smoke',
+      notes: '我认为第一条来源更接近一手资料。',
+      sources: [
+        { title: 'First source', url: 'https://example.org/first', snippet: 'The first source says alpha.', publishedAt: '2026-01-02' },
+        { title: 'Second source', url: 'https://example.net/second', snippet: 'The second source says beta.' },
+      ],
+    };
+
+    const unconfigured = await agent.post('/api/v1/research/synthesize').set(originHeaders).send(payload);
+    assert.equal(unconfigured.status, 503);
+    assert.equal(unconfigured.body.error, 'AI_PROVIDER_NOT_CONFIGURED');
+
+    synthesisServer = createServer((incoming, outgoing) => {
+      let body = '';
+      incoming.setEncoding('utf8');
+      incoming.on('data', (chunk) => { body += chunk; });
+      incoming.on('end', () => {
+        receivedBody = body;
+        outgoing.writeHead(200, { 'Content-Type': 'application/json' });
+        outgoing.end(JSON.stringify({
+          choices: [{ message: { content: '已检索事实：alpha [1]，beta [2]。综合判断：两者互补。待核实：原文上下文。' } }],
+          usage: { prompt_tokens: 120, completion_tokens: 30, total_tokens: 150 },
+        }));
+      });
+    });
+    await new Promise((resolve) => synthesisServer.listen(0, '127.0.0.1', resolve));
+    config.aiBaseUrl = 'http://127.0.0.1:' + synthesisServer.address().port + '/v1';
+    config.aiApiKey = 'synthesis-secret';
+    config.aiModel = 'synthesis-model';
+
+    const synthesized = await agent.post('/api/v1/research/synthesize').set(originHeaders).send(payload).expect(200);
+    assert.match(synthesized.body.synthesis, /\[1\]/);
+    assert.match(synthesized.body.disclosure, /模型综合/);
+    assert.equal(synthesized.body.sourceCount, 2);
+    assert.ok(synthesized.body.generatedAt);
+    assert.equal(JSON.stringify(synthesized.body).includes('synthesis-secret'), false);
+
+    const parsedBody = JSON.parse(receivedBody);
+    assert.equal(parsedBody.model, 'synthesis-model');
+    const prompt = parsedBody.messages.map((message) => message.content).join('\n');
+    assert.match(prompt, /example\.org\/first/);
+    assert.match(prompt, /example\.net\/second/);
+    assert.match(prompt, /已检索事实/);
+    assert.match(prompt, /我认为第一条来源更接近一手资料/);
+    assert.equal(prompt.includes('synthesis-secret'), false);
+
+    const badUrl = await agent.post('/api/v1/research/synthesize').set(originHeaders).send({
+      query: 'bad url', sources: [{ title: 'Bad', url: 'file:///etc/passwd' }],
+    }).expect(400);
+    assert.equal(badUrl.body.error, 'VALIDATION_ERROR');
+    const noSources = await agent.post('/api/v1/research/synthesize').set(originHeaders)
+      .send({ query: 'no sources', sources: [] }).expect(400);
+    assert.equal(noSources.body.error, 'VALIDATION_ERROR');
+
+    const anonymous = await request(app).post('/api/v1/research/synthesize')
+      .set(originHeaders).send(payload).expect(401);
+    assert.equal(anonymous.body.error, 'UNAUTHENTICATED');
+  } finally {
+    config.aiBaseUrl = previous.aiBaseUrl;
+    config.aiApiKey = previous.aiApiKey;
+    config.aiModel = previous.aiModel;
+    if (synthesisServer?.listening) await new Promise((resolve) => synthesisServer.close(resolve));
+  }
+});
+

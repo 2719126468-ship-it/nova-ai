@@ -109,3 +109,11 @@
   .research-synthesis { padding: 12px; }
   .research-synthesis textarea { font-size: 12px; min-height: 120px; }
 }
+
+.research-synthesis-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.research-synthesis-actions .button { min-height: 36px; padding: 7px 12px; font-size: 9px; }
+.research-synthesis-disclosure { padding: 9px 10px; border-left: 2px solid var(--accent); background: var(--surface-soft); color: var(--muted); font-size: 8px; line-height: 1.8; }
+.research-synthesis-error { margin: 0; color: #b85c5c; font-size: 9px; line-height: 1.7; }
+@media (max-width: 600px) {
+  .research-synthesis-actions .button { width: 100%; min-height: 44px; }
+}
