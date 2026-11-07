@@ -26,6 +26,7 @@ export default function Research() {
   const [selectedSourceIds, setSelectedSourceIds] = useState([]);
   const [notesBySource, setNotesBySource] = useState({});
   const [savingReport, setSavingReport] = useState(false);
+  const [synthesis, setSynthesis] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -58,6 +59,7 @@ export default function Research() {
     setSearchResults([]);
     setSelectedSourceIds([]);
     setNotesBySource({});
+    setSynthesis('');
     setSearchMeta(null);
     try {
       const result = await api('/api/v1/research/search', {
@@ -91,8 +93,11 @@ export default function Research() {
       '> 检索时间：' + (searchMeta?.retrievedAt || new Date().toISOString()),
       '> 搜索关键词：' + webQuery.trim(),
       '> 搜索服务：' + (searchMeta?.provider || '未知'),
+      '> 内容分级：本报告区分「检索资料」（外部返回，未核验）、「我的笔记」（人工判断）和「未证实推测」（模型或作者推断）。',
       '',
-      '## 来源与摘录',
+      '## 一、检索资料（来自搜索服务，未经独立核验）',
+      '',
+      '以下标题、摘要和日期均由外部搜索服务返回，NOVA 未逐一打开原文验证，不得直接当作已确认事实引用。',
       '',
     ];
     selectedSources.forEach((source, index) => {
@@ -108,17 +113,31 @@ export default function Research() {
       if (source.engines?.length) sections.push('- 检索引擎：' + source.engines.map(safeMarkdownText).join('、'));
       if (note) {
         sections.push('');
-        sections.push('**我的研究笔记**');
+        sections.push('**我的笔记（人工判断，非检索事实）**');
         sections.push('');
         sections.push(note.split(/\r?\n/).map((line) => safeMarkdownText(line)).join('  \n'));
       }
       sections.push('');
     });
+    sections.push('## 二、我的综合分析（未证实，需逐条核对来源）');
+    sections.push('');
+    const synthesisText = synthesis.trim();
+    if (synthesisText) {
+      sections.push(synthesisText.split(/\r?\n/).map((line) => safeMarkdownText(line)).join('  \n'));
+    } else {
+      sections.push('（尚未填写。此节用于区分作者或模型推断与上方的检索资料。）');
+    }
+    sections.push('');
+    sections.push('## 三、未证实推测');
+    sections.push('');
+    sections.push('- 本报告未包含模型自动生成的结论；后续补写的推断需在此节逐条标注“推测”并说明依据缺口。');
+    sections.push('- 检索摘要可能过时、断章取义或与原文冲突，任何结论都需要打开原文复核。');
+    sections.push('');
     sections.push('## 引用索引');
     sections.push('');
     selectedSources.forEach((source, index) => sections.push('[' + (index + 1) + ']: ' + source.url));
     sections.push('');
-    sections.push('> 说明：以上内容由搜索服务返回，摘录不是独立事实核验。正式引用前请打开原始页面核对上下文、作者与发布日期。');
+    sections.push('> 说明：检索资料来自搜索服务，摘录不是独立事实核验；「我的综合分析」与「未证实推测」两节不代表已核实结论。正式引用前请打开原始页面核对上下文、作者与发布日期。');
     return { title: reportTitle.slice(0, 120), content: sections.join('\n') };
   }
 
@@ -196,6 +215,18 @@ export default function Research() {
             </div>
           </article>)}
         </div>
+        <section className="research-synthesis">
+          <label htmlFor="research-synthesis-input">我的综合分析（可选，保存时标记为未证实推断）</label>
+          <textarea
+            id="research-synthesis-input"
+            rows={4}
+            maxLength={4000}
+            value={synthesis}
+            onChange={(event) => setSynthesis(event.target.value)}
+            placeholder="写下你基于这些来源的判断。保存后会与检索资料分开标注，不表示已核验事实。"
+          />
+          <small>{synthesis.length.toLocaleString()} / 4,000 · 这一节会被明确标注为“未证实，需逐条核对来源”。</small>
+        </section>
         <div className="research-organize-bar">
           <span>已选择 {selectedSources.length} / {searchResults.length} 条来源</span>
           <button type="button" onClick={saveSelectedSources} disabled={!user || !selectedSources.length || savingReport}>{savingReport ? <><LoaderCircle size={15} className="spin" /> 保存中…</> : <><FilePlus2 size={15} /> 整理并保存到 Documents</>}</button>

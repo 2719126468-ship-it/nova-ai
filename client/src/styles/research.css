@@ -98,3 +98,14 @@
   .research-organize-bar { bottom: max(8px, env(safe-area-inset-bottom)); align-items: stretch; flex-direction: column; }
   .research-organize-bar button { width: 100%; min-height: 44px; }
 }
+
+/* Retrieved material vs. unverified synthesis */
+.research-synthesis { display: grid; gap: 8px; margin-top: 18px; padding: 15px 16px; border: 1px solid var(--line); background: var(--surface); }
+.research-synthesis label { color: var(--ink); font-size: 10px; font-weight: 600; }
+.research-synthesis textarea { width: 100%; min-height: 96px; resize: vertical; padding: 10px 11px; border: 1px solid var(--line); border-radius: 3px; background: var(--surface-soft); color: var(--ink); font: inherit; font-size: 10px; line-height: 1.7; }
+.research-synthesis textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+.research-synthesis small { color: var(--subtle); font-size: 8px; line-height: 1.7; }
+@media (max-width: 600px) {
+  .research-synthesis { padding: 12px; }
+  .research-synthesis textarea { font-size: 12px; min-height: 120px; }
+}

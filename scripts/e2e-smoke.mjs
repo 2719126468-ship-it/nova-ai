@@ -179,6 +179,23 @@ async function main() {
       if (projectId) globalThis.__novaProjectId = projectId;
     }
 
+    // Research: real-search endpoint must report missing configuration honestly
+    // and the synthesis box must not exist before results arrive.
+    await page.goto(baseUrl + '/research', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.research-view-tabs button', { timeout: 20000 });
+    await clickByText(page, '.research-view-tabs button', '网络研究');
+    await page.waitForSelector('#research-search-input, .research-web-search-form input', { timeout: 15000 });
+    const searchInput = await page.$('.research-web-search-form input');
+    await searchInput.type('nova research smoke');
+    await clickByText(page, '.research-web-search-form button', '搜索网络');
+    const notConfigured = await page.waitForFunction(
+      () => document.body.innerText.includes('尚未配置真实搜索服务'),
+      { timeout: 20000 },
+    ).then(() => true).catch(() => false);
+    check('Research reports missing search provider instead of fabricating results', notConfigured);
+    const noFakeSources = await page.evaluate(() => document.querySelectorAll('.research-source-card').length === 0);
+    check('Research shows no fabricated source cards when unconfigured', noFakeSources);
+
     // Project context: file upload, opt-in toggle and download link.
     const uploadFile = path.join(tempDir, 'project-notes.md');
     fs.writeFileSync(uploadFile, '# 项目资料\n\nE2E 上传验证 ' + Date.now() + '\n');
@@ -364,7 +381,9 @@ async function main() {
 
     // The pre-login /auth/me probe legitimately returns 401 and offline font loads
     // fail; neither is an application defect.
-    const relevantErrors = consoleErrors.filter((text) => !/favicon|fonts\.(googleapis|gstatic)|ERR_FAILED|401 \(Unauthorized\)|403 \(Forbidden\)/.test(text));
+    // Expected by design: the pre-login /auth/me probe (401), the research search
+    // probe with no provider configured (503), and offline Google Fonts.
+    const relevantErrors = consoleErrors.filter((text) => !/favicon|fonts\.(googleapis|gstatic)|ERR_FAILED|401 \(Unauthorized\)|403 \(Forbidden\)|503 \(Service Unavailable\)/.test(text));
     check('No uncaught page errors during the flow', relevantErrors.length === 0, relevantErrors.slice(0, 3).join(' | '));
   } finally {
     if (browser) await browser.close().catch(() => {});
