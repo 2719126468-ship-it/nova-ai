@@ -411,3 +411,30 @@
   .chat-composer .composer-bottom > button { min-width: 44px; min-height: 44px; }
   .chat-model-state-actions button, .chat-model-state-actions a { min-height: 44px; }
 }
+
+/* Explicit model setup / loading states in Chat. */
+.chat-scroll-area { flex-direction: column; align-items: center; justify-content: flex-start; }
+.chat-scroll-content { display: flex; flex: 1; align-items: stretch; justify-content: center; width: 100%; min-height: 0; }
+.chat-model-state {
+  display: flex; align-items: center; justify-content: space-between; gap: 18px;
+  width: min(760px, calc(100% - 68px)); margin: 18px auto 0; padding: 13px 15px;
+  border: 1px solid var(--line); border-radius: 7px; background: var(--surface-soft);
+  color: var(--muted); font-size: 10px; line-height: 1.65;
+}
+.chat-model-state > div:first-child { display: grid; gap: 3px; min-width: 0; }
+.chat-model-state strong { color: var(--ink); font-size: 11px; }
+.chat-model-state span { overflow-wrap: anywhere; }
+.chat-model-state.is-error { border-color: rgba(180, 91, 91, .38); }
+.chat-model-state-actions { display: flex; flex: 0 0 auto; align-items: center; flex-wrap: wrap; gap: 8px; }
+.chat-model-state-actions button, .chat-model-state-actions a {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 31px; padding: 6px 10px;
+  border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); color: var(--ink);
+  font: inherit; font-size: 9px; text-decoration: none;
+}
+.chat-model-state-actions a:first-child, .chat-model-state-actions button { border-color: var(--accent); color: var(--accent-dark); }
+.chat-model-state-actions button:disabled { opacity: .55; cursor: wait; }
+@media (max-width: 760px) {
+  .chat-model-state { align-items: flex-start; flex-direction: column; width: calc(100% - 30px); margin-top: 12px; padding: 12px; }
+  .chat-model-state-actions { width: 100%; }
+  .chat-model-state-actions button, .chat-model-state-actions a { flex: 1; }
+}

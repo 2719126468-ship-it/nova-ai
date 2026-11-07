@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Activity, ArrowUpRight, BookOpen, FileText, LayoutDashboard, Plus, RefreshCw, Server, ShieldCheck, Users, X } from 'lucide-react';
 import { api, json } from '../lib/api';
 import { Button, ErrorNotice, Loading, PageIntro } from '../components/UI';
@@ -6,7 +7,8 @@ import ProviderManagement from './ProviderManagement.jsx';
 
 const blankArticle = { slug: '', title: '', category: 'AI 观察', summary: '', body: '', status: 'draft' };
 export default function Admin() {
-  const [tab, setTab] = useState('overview');
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState(() => searchParams.get('tab') === 'providers' ? 'providers' : 'overview');
   const [overview, setOverview] = useState(null);
   const [users, setUsers] = useState([]);
   const [articles, setArticles] = useState([]);
