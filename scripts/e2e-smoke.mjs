@@ -12,6 +12,7 @@
  * Requires a built client: npm run build
  */
 import { spawn } from 'node:child_process';
+import net from 'node:net';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -22,8 +23,21 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2);
 const headful = args.includes('--headful');
 const portIndex = args.indexOf('--port');
-const port = portIndex >= 0 ? Number(args[portIndex + 1]) : 4123;
-const baseUrl = 'http://127.0.0.1:' + port;
+let port = portIndex >= 0 ? Number(args[portIndex + 1]) : 0;
+let baseUrl = 'http://127.0.0.1:' + port;
+
+// Ask the OS for a free port so a stale process can never be mistaken for the
+// server under test.
+async function reservePort() {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const { port: freePort } = probe.address();
+      probe.close(() => resolve(freePort));
+    });
+  });
+}
 
 const chromiumPath = process.env.CHROMIUM_PATH
   || ['/data/data/com.termux/files/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome']
@@ -63,6 +77,10 @@ async function main() {
     throw new Error('client/dist is missing. Run: npm run build');
   }
 
+  if (!port) {
+    port = await reservePort();
+    baseUrl = 'http://127.0.0.1:' + port;
+  }
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nova-e2e-'));
   const dbPath = path.join(tempDir, 'e2e.sqlite');
   const server = spawn(process.execPath, ['server/src/index.js'], {
@@ -85,12 +103,17 @@ async function main() {
   const serverLog = [];
   server.stdout.on('data', (chunk) => serverLog.push(String(chunk)));
   server.stderr.on('data', (chunk) => serverLog.push(String(chunk)));
+  let serverExited = null;
+  server.on('exit', (code, signal) => { serverExited = { code, signal }; });
 
   let browser;
   try {
     const ready = await waitForServer(baseUrl);
-    check('API server boots and reports health', ready, ready ? baseUrl : serverLog.join('').slice(-400));
-    if (!ready) throw new Error('server did not start');
+    if (!ready) {
+      const tail = serverLog.join('').slice(-500);
+      throw new Error('server did not start on ' + baseUrl + ' exit=' + JSON.stringify(serverExited) + ' log=' + tail);
+    }
+    check('API server boots and reports health', true, baseUrl);
 
     const indexResponse = await fetch(baseUrl + '/documents');
     const indexHtml = await indexResponse.text();
@@ -152,6 +175,62 @@ async function main() {
         { timeout: 20000 },
       ).then(() => true).catch(() => false);
       check('Studio creates a project and opens it', created, await page.evaluate(() => location.pathname));
+      const projectId = await page.evaluate(() => (location.pathname.match(/\/studio\/(\d+)/) || [])[1] || null);
+      if (projectId) globalThis.__novaProjectId = projectId;
+    }
+
+    // Project context: file upload, opt-in toggle and download link.
+    const uploadFile = path.join(tempDir, 'project-notes.md');
+    fs.writeFileSync(uploadFile, '# 项目资料\n\nE2E 上传验证 ' + Date.now() + '\n');
+    const projectContextId = globalThis.__novaProjectId;
+    if (!projectContextId) throw new Error('project id was not captured from the Studio editor');
+    await page.goto(baseUrl + '/project-context/' + projectContextId, { waitUntil: 'domcontentloaded' });
+    const contextReady = await page.waitForSelector('input[type="file"]', { timeout: 20000 }).then(() => true).catch(() => false);
+    if (!contextReady) {
+      check('Project context page exposes a file input', false);
+    } else {
+      const fileInput = await page.$('input[type="file"]');
+      await fileInput.uploadFile(uploadFile);
+      const uploaded = await page.waitForFunction(
+        () => document.body.innerText.includes('project-notes.md'),
+        { timeout: 20000 },
+      ).then(() => true).catch(() => false);
+      check('Project file upload succeeds from the browser', uploaded);
+
+      const downloadHref = await page.evaluate(() => {
+        const link = [...document.querySelectorAll('.project-file-action')]
+          .find((node) => (node.getAttribute('aria-label') || '').includes('下载'));
+        return link ? link.getAttribute('href') : null;
+      });
+      check('Uploaded project file exposes a download link', Boolean(downloadHref), downloadHref || '');
+      if (downloadHref) {
+        // Fetch from inside the page so the HttpOnly session cookie is applied.
+        const download = await page.evaluate(async (href) => {
+          const response = await fetch(href, { credentials: 'include' });
+          const text = await response.text();
+          return { status: response.status, body: text.slice(0, 200) };
+        }, downloadHref);
+        check('Project file download returns the uploaded content',
+          download.status === 200 && download.body.includes('E2E 上传验证'),
+          download.status + ' ' + download.body.slice(0, 60));
+      }
+
+      const summaryBefore = await page.evaluate(() => document.querySelector('.project-file-usage')?.innerText || '');
+      const clickedToggle = await page.evaluate(() => {
+        const checkbox = document.querySelector('.project-file-toggle input[type="checkbox"]');
+        if (!checkbox) return false;
+        checkbox.click();
+        return true;
+      });
+      await page.waitForFunction(
+        () => /1 个文件已启用上下文/.test(document.querySelector('.project-file-usage')?.innerText || ''),
+        { timeout: 15000 },
+      ).then(() => true).catch(() => false);
+      const summaryAfter = await page.evaluate(() => document.querySelector('.project-file-usage')?.innerText || '');
+      const persistedToggle = await page.evaluate(() => Boolean(document.querySelector('.project-file-toggle input[type="checkbox"]')?.checked));
+      check('Project file context opt-in persists and updates the summary',
+        clickedToggle && persistedToggle && /1 个文件已启用上下文/.test(summaryAfter),
+        'before=' + summaryBefore.replace(/\n/g, ' | ') + ' after=' + summaryAfter.replace(/\n/g, ' | '));
     }
 
     await page.goto(baseUrl + '/documents', { waitUntil: 'domcontentloaded' });
@@ -229,7 +308,13 @@ async function main() {
 
     await page.setViewport({ width: 360, height: 780, isMobile: true, hasTouch: true });
     await page.goto(documentUrl, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('.document-title-input');
+    const editorReady = await page.waitForSelector('.document-title-input', { timeout: 20000 }).then(() => true).catch(() => false);
+    if (!editorReady) {
+      console.log('DEBUG mobile editor:', documentUrl, JSON.stringify(await page.evaluate(() => ({
+        path: location.pathname, text: document.body.innerText.slice(0, 250),
+      }))));
+    }
+    check('Document editor reopens at the mobile viewport', editorReady);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     check('Mobile 360px document editor has no horizontal overflow', overflow <= 2, 'overflow=' + overflow + 'px');
 
@@ -256,8 +341,18 @@ async function main() {
 
     await page.setViewport({ width: 1280, height: 900 });
     await page.goto(baseUrl + '/admin?tab=monitoring', { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => document.body.innerText.includes('错误监控'), { timeout: 20000 });
-    check('Admin monitoring panel renders', true);
+    const monitoringReady = await page.waitForFunction(
+      () => document.body.innerText.includes('错误监控'),
+      { timeout: 20000 },
+    ).then(() => true).catch(() => false);
+    if (!monitoringReady) {
+      console.log('DEBUG admin:', JSON.stringify(await page.evaluate(() => ({
+        path: location.pathname,
+        role: document.body.innerText.match(/ADMIN|管理员/)?.[0] || null,
+        text: document.body.innerText.slice(0, 300),
+      }))), consoleErrors.slice(-4).join(' | '));
+    }
+    check('Admin monitoring panel renders', monitoringReady);
 
     await page.goto(baseUrl + '/admin?tab=audit', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => document.body.innerText.includes('管理员审计日志'), { timeout: 20000 });
