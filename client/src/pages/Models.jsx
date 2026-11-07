@@ -58,6 +58,17 @@ export default function Models() {
         {configured ? 'CONFIGURED · UNVERIFIED' : 'NOT CONFIGURED'}
       </div>
     </div>
+    {data && !configured && <div className="config-reference">
+      <div><span className="eyebrow">NEXT STEP</span><h3>尚未启用可用模型</h3><p>{user?.role === 'admin'
+        ? '你拥有管理员权限，可以直接进入 Provider 管理。保存配置后返回聊天页面并刷新模型列表。'
+        : '模型配置由服务器管理员负责。请将此配置说明页发送给管理员，完成服务端配置后返回聊天页面重试。'}</p></div>
+      <div className="model-setup-actions">
+        {user?.role === 'admin'
+          ? <Button to="/admin?tab=providers" variant="outline">打开 Provider 管理 <ArrowUpRight size={15} /></Button>
+          : <p>普通用户无需也不应访问管理员配置接口。</p>}
+        <Button to="/chat" variant="ghost">返回聊天</Button>
+      </div>
+    </div>}
     {data?.models?.length > 0 && <div className="config-reference">
       <div><span className="eyebrow">MODEL REGISTRY</span><h3>模型目录 <span className="model-registry-count">{data.models.length}</span></h3><p>所有密钥仅存在服务端；只有已配置且启用的模型能在 Chat 中选择。</p></div>
       <div className="model-registry-list">
