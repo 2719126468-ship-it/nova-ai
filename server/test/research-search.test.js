@@ -182,3 +182,33 @@ test('Research search returns a sanitized upstream error instead of raw provider
     config.researchSearchProvider = '';
   }
 });
+
+test('Research articles remain public-read and administrator-write only', async () => {
+  const regular = await registerUser('research-cms-regular@example.com');
+  const article = {
+    slug: 'admin-only-research-record',
+    title: 'Administrator Only Research',
+    category: 'Security',
+    summary: 'A published source-backed editorial entry.',
+    body: 'This is a sufficiently long body for the published research article.',
+    status: 'published',
+  };
+  await regular.post('/api/v1/research').set(originHeaders).send(article).expect(403);
+
+  const admin = await registerUser('research-cms-admin@example.com');
+  const adminUser = db.prepare('SELECT id FROM users WHERE email=?').get('research-cms-admin@example.com');
+  db.prepare("UPDATE users SET role='admin' WHERE id=?").run(adminUser.id);
+  await admin.post('/api/v1/research').set(originHeaders).send(article).expect(201);
+  await admin.post('/api/v1/research').set(originHeaders).send({
+    ...article,
+    slug: 'admin-only-research-draft',
+    status: 'draft',
+  }).expect(201);
+
+  const publicList = await request(app).get('/api/v1/research').expect(200);
+  assert.equal(publicList.body.articles.some((item) => item.slug === article.slug), true);
+  assert.equal(publicList.body.articles.some((item) => item.slug === 'admin-only-research-draft'), false);
+  await request(app).get('/api/v1/research/admin-only-research-draft').expect(404);
+  await request(app).get('/api/v1/research/admin-only-research-record').expect(200);
+  await regular.delete('/api/v1/research/1').set(originHeaders).expect(403);
+});
