@@ -63,7 +63,7 @@ npm run db:restore -- backups/nova-2026-11-07T14-05-01-969Z.sqlite
 npm run db:verify
 ```
 
-恢复前会校验备份完整性，并把现有数据库重命名为 `nova.sqlite.pre-restore-<timestamp>`（保留回滚点），随后清理 `-wal`/`-shm` 再复制备份文件。恢复后再次校验，失败即报错。
+备份文件参数与 `DB_PATH` 一样按仓库根目录解析（相对路径不必考虑当前工作目录）。恢复前会校验备份完整性，并把现有数据库重命名为 `nova.sqlite.pre-restore-<timestamp>`（保留回滚点），随后清理 `-wal`/`-shm` 再复制备份文件。恢复后再次校验，失败即报错。
 
 演练记录：2026-11-07 在本机完成一次"备份 → 校验 → 恢复到运行库 → 用户数据仍可读取"的完整回路，见 `docs/audits/B4-01-VERIFICATION.md`。
 

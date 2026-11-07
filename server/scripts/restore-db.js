@@ -17,7 +17,9 @@ const { restoreDatabase } = await import('../src/services/backup.js');
 
 try {
   const result = restoreDatabase({
-    backupFile: path.resolve(process.cwd(), backupFile),
+    // Resolve like DB_PATH: relative to the repository root, not process.cwd(),
+    // so `npm run db:restore -w server` and root-level runs address the same file.
+    backupFile: path.isAbsolute(backupFile) ? backupFile : path.resolve(rootDir, backupFile),
     dbPath: config.dbPath,
     keepCurrent: true,
   });

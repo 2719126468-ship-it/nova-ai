@@ -401,3 +401,32 @@ test('relative DB_PATH resolves against the repository root from any working dir
   }
 });
 
+
+test('restore-db script resolves a relative backup path against the repository root', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const fs = await import('node:fs');
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+  const script = path.join(repoRoot, 'server/scripts/restore-db.js');
+  let output = '';
+  try {
+    output = execFileSync(process.execPath, [script, 'backups/does-not-exist.sqlite'], {
+      cwd: path.join(repoRoot, 'server'),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch (error) {
+    output = String(error.stdout || '') + String(error.stderr || '');
+  }
+  const start = output.indexOf('{');
+  const end = output.lastIndexOf('}');
+  assert.ok(start >= 0 && end > start, 'restore script should print a JSON report: ' + output.slice(0, 200));
+  const parsed = JSON.parse(output.slice(start, end + 1));
+  assert.equal(parsed.ok, false);
+  // The failure must be about the file, not about a duplicated "server/server" path.
+  assert.match(parsed.error, /DATABASE_NOT_FOUND/);
+  assert.equal(parsed.error.includes('server/server'), false, parsed.error);
+  assert.ok(fs.existsSync(path.join(repoRoot, 'backups')), 'backups dir should exist at the repo root');
+});
+
