@@ -28,3 +28,7 @@
 .model-probe-button:hover:not(:disabled) { color: var(--ink); border-color: var(--ink); }
 .model-probe-button:disabled { opacity: .45; cursor: not-allowed; }
 @media (max-width: 560px) { .model-registry-actions { width: 100%; justify-content: space-between; } }
+
+.model-setup-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; }
+.model-setup-actions p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.7; }
+@media (max-width: 760px) { .model-setup-actions { align-items: stretch; flex-direction: column; } .model-setup-actions .button { width: 100%; justify-content: center; } }
