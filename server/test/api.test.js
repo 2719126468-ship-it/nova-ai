@@ -332,7 +332,7 @@ test('database migrations add message lifecycle fields and are idempotent', () =
   assert.ok(columns.has('status'));
   assert.ok(columns.has('error_code'));
   const versions = db.prepare('SELECT version FROM schema_migrations ORDER BY version').all();
-  assert.deepEqual(versions.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.deepEqual(versions.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
   const versionColumns = new Set(db.prepare('PRAGMA table_info(message_versions)').all().map((column) => column.name));
   assert.ok(versionColumns.has('message_id'));
   assert.ok(versionColumns.has('content'));
@@ -352,6 +352,10 @@ test('database migrations add message lifecycle fields and are idempotent', () =
   const contextColumns = new Set(db.prepare('PRAGMA table_info(model_context_windows)').all().map((column) => column.name));
   assert.ok(contextColumns.has('provider_id'));
   assert.ok(contextColumns.has('upstream_model_id'));
+  const healthColumns = new Set(db.prepare('PRAGMA table_info(model_health_snapshots)').all().map((column) => column.name));
+  assert.ok(healthColumns.has('provider_id'));
+  assert.ok(healthColumns.has('status'));
+  assert.ok(healthColumns.has('checked_at'));
   const auditColumns = new Set(db.prepare('PRAGMA table_info(admin_audit_logs)').all().map((column) => column.name));
   assert.ok(auditColumns.has('actor_user_id'));
   assert.ok(auditColumns.has('action'));
@@ -2311,4 +2315,103 @@ test('admin provider management encrypts secrets, enforces role boundaries, and 
   }
 });
 
+
+
+test('model discovery and persisted health snapshots stay admin-only and redact credentials', async () => {
+  const previous = {
+    aiBaseUrl: config.aiBaseUrl,
+    aiApiKey: config.aiApiKey,
+    aiModel: config.aiModel,
+    aiProvidersJson: config.aiProvidersJson,
+    aiDefaultModelId: config.aiDefaultModelId,
+    providerEncryptionKey: config.providerEncryptionKey,
+  };
+  let discoveryServer;
+  let seenAuth = null;
+  try {
+    config.aiBaseUrl = '';
+    config.aiApiKey = '';
+    config.aiModel = '';
+    config.aiProvidersJson = '';
+    config.aiDefaultModelId = '';
+    config.providerEncryptionKey = process.env.PROVIDER_ENCRYPTION_KEY;
+
+    discoveryServer = createServer((incoming, outgoing) => {
+      seenAuth = incoming.headers.authorization || null;
+      if (incoming.method === 'GET' && incoming.url === '/v1/models') {
+        outgoing.writeHead(200, { 'Content-Type': 'application/json' });
+        outgoing.end(JSON.stringify({ data: [
+          { id: 'discover-one', context_length: 32768 },
+          { id: 'discover-two' },
+        ] }));
+        return;
+      }
+      outgoing.writeHead(404, { 'Content-Type': 'application/json' });
+      outgoing.end('{}');
+    });
+    await new Promise((resolve) => discoveryServer.listen(0, '127.0.0.1', resolve));
+
+    const admin = request.agent(app);
+    await admin.post('/api/v1/auth/register').set(originHeaders).send({
+      email: 'discovery-admin@example.com', name: 'Discovery Admin', password: 'discovery-admin-password-strong',
+    }).expect(201);
+    db.prepare("UPDATE users SET role='admin' WHERE email='discovery-admin@example.com'").run();
+    await admin.post('/api/v1/auth/login').set(originHeaders).send({
+      email: 'discovery-admin@example.com', password: 'discovery-admin-password-strong',
+    }).expect(200);
+
+    const secret = 'discovery-provider-secret';
+    await admin.post('/api/v1/admin/providers').set(originHeaders).send({
+      id: 'discovery-provider',
+      name: 'Discovery Provider',
+      baseUrl: 'http://127.0.0.1:' + discoveryServer.address().port + '/v1',
+      apiKey: secret,
+      models: [{ id: 'discover-one', contextLimit: 8192 }],
+    }).expect(201);
+
+    const discovery = await admin.post('/api/v1/models/discover').set(originHeaders)
+      .send({ providerId: 'discovery-provider' }).expect(200);
+    assert.equal(discovery.body.status, 'healthy');
+    assert.equal(seenAuth, 'Bearer ' + secret);
+    assert.deepEqual(discovery.body.models.map((model) => model.id), ['discover-one', 'discover-two']);
+    assert.equal(discovery.body.models[0].alreadyConfigured, true);
+    assert.equal(discovery.body.models[1].alreadyConfigured, false);
+    assert.equal(discovery.body.models[0].contextLimit, 32768);
+    assert.equal(JSON.stringify(discovery.body).includes(secret), false);
+    assert.equal(JSON.stringify(discovery.body).includes('127.0.0.1'), false);
+
+    const probe = await admin.post('/api/v1/models/health').set(originHeaders)
+      .send({ modelId: 'discovery-provider:discover-one' }).expect(200);
+    assert.equal(probe.body.status, 'healthy');
+    const snapshot = db.prepare('SELECT status,code FROM model_health_snapshots WHERE provider_id=? AND upstream_model_id=?')
+      .get('discovery-provider', 'discover-one');
+    assert.deepEqual(snapshot, { status: 'healthy', code: 'MODEL_LIST_CONFIRMED' });
+
+    const catalog = await request(app).get('/api/v1/models').expect(200);
+    const catalogModel = catalog.body.models.find((model) => model.id === 'discovery-provider:discover-one');
+    assert.equal(catalogModel.status, 'healthy');
+    assert.ok(catalogModel.healthCheckedAt);
+    assert.equal(JSON.stringify(catalog.body).includes(secret), false);
+
+    const regular = request.agent(app);
+    await regular.post('/api/v1/auth/register').set(originHeaders).send({
+      email: 'discovery-regular@example.com', name: 'Discovery Regular', password: 'discovery-regular-password-strong',
+    }).expect(201);
+    await regular.post('/api/v1/models/discover').set(originHeaders)
+      .send({ providerId: 'discovery-provider' }).expect(403);
+    await admin.post('/api/v1/models/discover').set(originHeaders)
+      .send({ providerId: 'missing-provider' }).expect(404);
+    await admin.post('/api/v1/models/discover').set(originHeaders).send({}).expect(400);
+
+    await admin.delete('/api/v1/admin/providers/discovery-provider').set(originHeaders).expect(200);
+  } finally {
+    config.aiBaseUrl = previous.aiBaseUrl;
+    config.aiApiKey = previous.aiApiKey;
+    config.aiModel = previous.aiModel;
+    config.aiProvidersJson = previous.aiProvidersJson;
+    config.aiDefaultModelId = previous.aiDefaultModelId;
+    config.providerEncryptionKey = previous.providerEncryptionKey;
+    if (discoveryServer?.listening) await new Promise((resolve) => discoveryServer.close(resolve));
+  }
+});
 

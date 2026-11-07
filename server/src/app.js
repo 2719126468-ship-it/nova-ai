@@ -8,8 +8,8 @@ import cookieParser from 'cookie-parser';
 import { rateLimit } from 'express-rate-limit';
 import { config } from './config.js';
 import { getModelRegistry } from './services/model-registry.js';
-import { requireAuth } from './middleware/auth.js';
-import { probeModel } from './services/model-health.js';
+import { requireAuth, requireAdmin } from './middleware/auth.js';
+import { discoverProviderModels, probeModel } from './services/model-health.js';
 import { requireAppRequest, apiCspDirectives, webDocumentCsp } from './middleware/security.js';
 import { newRequestId, recordError } from './services/monitoring.js';
 import authRoutes from './routes/auth.js';
@@ -129,6 +129,19 @@ export function createApp() {
     keyGenerator: (req) => 'user:' + req.user.id,
     message: { error: 'MODEL_PROBE_RATE_LIMITED', message: '模型检查过于频繁，请稍后再试。' },
   });
+  app.post('/api/v1/models/discover', requireAuth, requireAdmin, modelProbeLimiter, async (req, res, next) => {
+    const providerId = typeof req.body?.providerId === 'string' ? req.body.providerId.trim() : '';
+    if (!providerId || providerId.length > 64) {
+      return res.status(400).json({ error: 'VALIDATION_ERROR', message: '请提供有效的 providerId。' });
+    }
+    try {
+      res.set('Cache-Control', 'no-store');
+      res.json(await discoverProviderModels(providerId));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post('/api/v1/models/health', requireAuth, modelProbeLimiter, async (req, res, next) => {
     const modelId = typeof req.body?.modelId === 'string' ? req.body.modelId.trim() : '';
     if (!modelId || modelId.length > 300) {

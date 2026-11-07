@@ -19,6 +19,10 @@ Returns API health and whether the server has a complete AI provider configurati
 
 Returns the server-side model catalog. The response contains providers, models, defaultModelId and contextPolicy. API keys and provider base URLs are never returned. The top-level provider object reports configuration separately from upstream health; configured providers remain health: unknown until a real probe is run. The health endpoint returns ai.status as configured_unverified or not_configured. Model entries expose context-window provenance and tokenizer/output-limit configuration without exposing credentials.
 
+### POST /api/v1/models/discover
+
+Administrator only, limited to 5 requests per user per minute. Body: `{ "providerId": "provider-id" }`. Performs a read-only authenticated GET on `{baseUrl}/models` and returns `providerId`, `status` (healthy/degraded/unavailable/unknown), `code`, `message`, `durationMs` and `models[]` (`id`, `contextLimit`, `alreadyConfigured`). It never generates a completion and never returns the provider key or base URL. Unknown provider returns 404 `PROVIDER_NOT_FOUND`; incomplete credentials return 409 `PROVIDER_NOT_CONFIGURED`.
+
 ### POST /api/v1/models/health
 
 Requires an authenticated session and is limited to 5 checks per user per minute. Body: `{ "modelId": "provider-id:upstream-model-id" }`. The server makes a read-only authenticated GET request to the Provider's `/models` endpoint; it never generates a prompt or spends completion tokens. It returns `healthy` only when the upstream catalog confirms the exact upstream model ID. When that model entry explicitly returns a positive integer context field (`context_length`, `context_window`, `max_context_length`, `max_model_len`, or their camelCase equivalents), NOVA stores it as `provider_reported` and uses it ahead of a manually configured hint. A provider that does not support `/models`, returns an unrecognized catalog, or omits a context field remains healthy/unknown as appropriate but does not create a verified window. Authentication failures/server errors report `unavailable`; upstream 429 reports `degraded`. The result is an on-demand observation, not a persisted long-term health guarantee.
@@ -44,6 +48,8 @@ A configured model has this shape:
   "maxTokensParameter": "auto"
 }
 ```
+
+A successful or failed health probe persists a snapshot in `model_health_snapshots` (migration v11). The catalog reports that snapshot as `status`, `statusLabel` (probe code) and `healthCheckedAt` for up to 24 hours; older snapshots are ignored so `unknown` returns once the observation is stale. `MODEL_NOT_FOUND`/`MODEL_LIST_UNSUPPORTED` probes clear the snapshot instead of storing it.
 
 `contextLimit` is the best available context-window value. `contextLimitSource` is one of `provider_reported`, `admin_configured`, `environment_configured`, or `unknown`. A provider-reported value is taken only from an explicit upstream model-catalog field during a health probe; admin/environment values are deployment hints and are not independently verified. A provider-reported value takes precedence over configured hints.
 

@@ -248,6 +248,25 @@ const migrations = [
       `);
     },
   },
+  {
+    version: 11,
+    name: 'model-health-snapshots',
+    up(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS model_health_snapshots (
+          provider_id TEXT NOT NULL,
+          upstream_model_id TEXT NOT NULL,
+          status TEXT NOT NULL CHECK(status IN ('healthy','degraded','unavailable','unknown')),
+          code TEXT,
+          duration_ms INTEGER CHECK(duration_ms IS NULL OR duration_ms >= 0),
+          checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY(provider_id, upstream_model_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_model_health_checked
+          ON model_health_snapshots(checked_at DESC);
+      `);
+    },
+  },
 
 ];
 

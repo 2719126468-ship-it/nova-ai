@@ -165,6 +165,10 @@ function buildCatalog(privateProviders, configurationError) {
   const reportedWindows = new Map(db.prepare(
     'SELECT provider_id,upstream_model_id,context_tokens,checked_at FROM model_context_windows WHERE datetime(checked_at) >= datetime(\'now\', \'-30 days\')',
   ).all().map((row) => [row.provider_id + ':' + row.upstream_model_id, row]));
+  // Health snapshots are observations, never guarantees: they expire after 24h.
+  const healthSnapshots = new Map(db.prepare(
+    "SELECT provider_id,upstream_model_id,status,code,duration_ms,checked_at FROM model_health_snapshots WHERE datetime(checked_at) >= datetime('now','-1 day')",
+  ).all().map((row) => [row.provider_id + ':' + row.upstream_model_id, row]));
   const models = privateProviders.flatMap((provider) => provider.models.map((model) => ({
     id: model.id,
     name: model.name,
@@ -173,8 +177,10 @@ function buildCatalog(privateProviders, configurationError) {
     configured: provider.configured,
     enabled: model.enabled,
     selectable: provider.configured && model.enabled,
-    status: 'unknown',
-    statusLabel: provider.configured ? 'NOT_CHECKED' : 'NOT_CONFIGURED',
+    status: healthSnapshots.get(provider.id + ':' + model.upstreamModelId)?.status || 'unknown',
+    statusLabel: healthSnapshots.get(provider.id + ':' + model.upstreamModelId)?.code
+      || (provider.configured ? 'NOT_CHECKED' : 'NOT_CONFIGURED'),
+    healthCheckedAt: healthSnapshots.get(provider.id + ':' + model.upstreamModelId)?.checked_at || null,
     capabilities: model.capabilities,
     contextLimit: reportedWindows.get(provider.id + ':' + model.upstreamModelId)?.context_tokens ?? model.contextLimit,
     contextLimitSource: reportedWindows.has(provider.id + ':' + model.upstreamModelId)
@@ -214,6 +220,16 @@ function buildCatalog(privateProviders, configurationError) {
 export function getModelRegistry() {
   const { providers, configurationError } = loadPrivateProviders();
   return buildCatalog(providers, configurationError);
+}
+
+/**
+ * Server-side only: private provider record (base URL + key) for discovery and
+ * probes. Never serialize this object into an API response.
+ */
+export function getPrivateProvider(providerId) {
+  if (typeof providerId !== 'string' || !PROVIDER_ID_PATTERN.test(providerId)) return null;
+  const { providers } = loadPrivateProviders();
+  return providers.find((provider) => provider.id === providerId) || null;
 }
 
 export function resolveModel(modelId) {

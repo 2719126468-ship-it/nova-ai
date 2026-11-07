@@ -87,3 +87,18 @@
   .admin-panel-note { font-size: 10px; }
   .admin-table td small { max-width: 180px; }
 }
+
+/* Provider model discovery */
+.provider-discovery { display: grid; gap: 10px; padding: 12px 13px; border: 1px dashed var(--line-strong); background: var(--surface-soft); }
+.provider-discovery-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.provider-discovery-heading strong { display: block; color: var(--ink); font-size: 10px; }
+.provider-discovery-heading small { display: block; margin-top: 3px; color: var(--subtle); font-size: 8px; line-height: 1.6; }
+.provider-discovery-result { display: grid; gap: 7px; }
+.provider-discovery-result small { color: var(--muted); font-size: 8px; line-height: 1.6; }
+.provider-discovery-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.provider-discovery-list button { min-height: 30px; padding: 5px 9px; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--surface); color: var(--ink); font: inherit; font-size: 8px; }
+.provider-discovery-list button:disabled { opacity: .55; cursor: default; }
+@media (max-width: 760px) {
+  .provider-discovery-heading { flex-direction: column; align-items: stretch; }
+  .provider-discovery-list button { min-height: 40px; flex: 1 1 auto; }
+}

@@ -40,6 +40,8 @@ export default function ProviderManagement() {
   const [notice, setNotice] = useState('');
   const [healthByModel, setHealthByModel] = useState({});
   const [checkingModelId, setCheckingModelId] = useState(null);
+  const [discovery, setDiscovery] = useState(null);
+  const [discovering, setDiscovering] = useState(false);
 
   const load = useCallback(async () => {
     const [providerState, modelCatalog] = await Promise.all([
@@ -55,6 +57,7 @@ export default function ProviderManagement() {
   }, [load]);
 
   function beginCreate() {
+    setDiscovery(null);
     setEditingId(null);
     setDraft(emptyDraft());
     setError('');
@@ -64,6 +67,7 @@ export default function ProviderManagement() {
 
   function beginEdit(provider) {
     if (provider.readOnly) return;
+    setDiscovery(null);
     setEditingId(provider.id);
     setDraft({
       id: provider.id,
@@ -170,6 +174,52 @@ export default function ProviderManagement() {
     }
   }
 
+  async function discoverModels() {
+    if (discovering) return;
+    setDiscovering(true);
+    setError('');
+    setNotice('');
+    setDiscovery(null);
+    try {
+      const result = await api('/api/v1/models/discover', {
+        method: 'POST',
+        body: json({ providerId: editingId }),
+      });
+      setDiscovery(result);
+      if (result.status !== 'healthy') setError(result.message || '无法读取上游模型目录。');
+    } catch (cause) {
+      setError(cause.message);
+    } finally {
+      setDiscovering(false);
+    }
+  }
+
+  function addDiscoveredModel(model) {
+    let models;
+    try {
+      models = JSON.parse(draft.modelsText);
+    } catch {
+      setError('当前模型列表不是有效 JSON，无法自动追加。');
+      return;
+    }
+    if (!Array.isArray(models)) models = [];
+    if (models.some((item) => item?.id === model.id)) {
+      setNotice(model.id + ' 已在配置中。');
+      return;
+    }
+    models.push({
+      id: model.id,
+      name: model.id,
+      enabled: true,
+      capabilities: ['chat', 'text'],
+      contextLimit: model.contextLimit ?? null,
+      tokenizer: 'auto',
+      maxTokensParameter: 'auto',
+    });
+    setDraft({ ...draft, modelsText: JSON.stringify(models, null, 2) });
+    setNotice('已把 ' + model.id + ' 加入模型列表草稿，保存后生效。');
+  }
+
   async function checkModel(modelId) {
     if (checkingModelId) return;
     setCheckingModelId(modelId);
@@ -240,6 +290,23 @@ export default function ProviderManagement() {
           <input required={!editingId} type="password" autoComplete="new-password" maxLength={4000} value={draft.apiKey} onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })} placeholder={editingId ? '留空则保留当前密钥' : '只发送到服务端并以 AES-256-GCM 加密保存'} />
         </label>
         <label className="provider-enabled-field"><input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} /> 启用此 Provider</label>
+        {editingId && <div className="provider-field-wide provider-discovery">
+          <div className="provider-discovery-heading">
+            <div><strong>自动发现上游模型</strong><small>只读请求 Provider 的 /models 端点；不会生成回答，也不会把密钥发送到浏览器。</small></div>
+            <Button type="button" variant="outline" onClick={discoverModels} disabled={discovering}>
+              <RefreshCw size={13} /> {discovering ? '正在读取…' : '读取上游模型目录'}
+            </Button>
+          </div>
+          {discovery && <div className="provider-discovery-result">
+            <span className={'provider-model-status ' + (discovery.status === 'healthy' ? '' : 'is-off')}>{discovery.status} · {discovery.code}</span>
+            <small>{discovery.message} 用时 {discovery.durationMs} ms，返回 {discovery.models.length} 个模型。</small>
+            {discovery.models.length > 0 && <div className="provider-discovery-list">
+              {discovery.models.map((model) => <button type="button" key={model.id} onClick={() => addDiscoveredModel(model)} disabled={model.alreadyConfigured}>
+                {model.alreadyConfigured ? '已配置 · ' : '+ '}{model.id}{model.contextLimit ? ' · ' + model.contextLimit.toLocaleString() + ' tokens' : ''}
+              </button>)}
+            </div>}
+          </div>}
+        </div>}
         <label className="provider-field-wide">模型列表（JSON）
           <textarea required rows={8} spellCheck={false} value={draft.modelsText} onChange={(event) => setDraft({ ...draft, modelsText: event.target.value })} />
           <small>每个模型填写 id；name、enabled、capabilities、contextLimit、tokenizer 可选。contextLimit 是管理员配置的参考上限；tokenizer 可填 auto、cl100k_base、o200k_base 或 none；maxTokensParameter 可填 auto、max_tokens、max_completion_tokens 或 none。自动参数会为 GPT-5 / o 系列使用 max_completion_tokens，其它常见聊天模型使用 max_tokens。</small>

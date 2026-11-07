@@ -225,3 +225,18 @@ test('audit sanitizer drops credential-shaped fields at any depth', () => {
   const entry = listAuditLogs(5).find((item) => item.id === id);
   assert.equal(entry.metadata.name, 'provider');
 });
+
+test('model health snapshots expire and never expose credentials through the catalog', async () => {
+  const { getModelRegistry } = await import('../src/services/model-registry.js');
+  db.prepare("INSERT INTO model_health_snapshots(provider_id,upstream_model_id,status,code,duration_ms,checked_at) VALUES(?,?,?,?,?,datetime('now','-2 days'))")
+    .run('stale-provider', 'stale-model', 'healthy', 'MODEL_LIST_CONFIRMED', 12);
+  db.prepare("INSERT INTO model_health_snapshots(provider_id,upstream_model_id,status,code,duration_ms,checked_at) VALUES(?,?,?,?,?,CURRENT_TIMESTAMP)")
+    .run('fresh-provider', 'fresh-model', 'unavailable', 'PROVIDER_NETWORK_ERROR', 30);
+  const registry = getModelRegistry();
+  const serialized = JSON.stringify(registry);
+  assert.equal(serialized.includes('stale-model'), false);
+  assert.equal(serialized.includes('fresh-model'), false);
+  const rows = db.prepare("SELECT COUNT(*) AS count FROM model_health_snapshots WHERE datetime(checked_at) >= datetime('now','-1 day')").get().count;
+  assert.equal(rows, 1);
+});
+
