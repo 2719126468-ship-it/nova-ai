@@ -427,6 +427,9 @@ test('restore-db script resolves a relative backup path against the repository r
   // The failure must be about the file, not about a duplicated "server/server" path.
   assert.match(parsed.error, /DATABASE_NOT_FOUND/);
   assert.equal(parsed.error.includes('server/server'), false, parsed.error);
-  assert.ok(fs.existsSync(path.join(repoRoot, 'backups')), 'backups dir should exist at the repo root');
+  // The resolved path must live under the repo root exactly once, whether or not
+  // the (git-ignored) backups directory exists in this checkout.
+  assert.match(parsed.error, new RegExp('^DATABASE_NOT_FOUND: ' + repoRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[/\\\\]backups[/\\\\]does-not-exist\\.sqlite$'));
+  assert.equal(fs.existsSync(path.join(repoRoot, 'server/server')), false, 'no duplicated server segment');
 });
 
