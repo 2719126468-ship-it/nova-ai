@@ -34,9 +34,9 @@ router.post('/search', requireAuth, searchLimiter, async (req, res, next) => {
       message: '搜索关键词必须为 2–300 个字符，结果数量必须为 1–10。',
     });
   }
+  res.set('Cache-Control', 'no-store');
   try {
     const result = await searchWeb(parsed.data.query, parsed.data.count);
-    res.set('Cache-Control', 'no-store');
     return res.json(result);
   } catch (error) {
     return next(error);
