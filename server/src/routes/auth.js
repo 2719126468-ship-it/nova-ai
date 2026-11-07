@@ -82,7 +82,7 @@ router.get('/export', requireAuth, (req, res, next) => {
       'SELECT id,title,description,content,instructions,instructions_version AS instructionsVersion,created_at,updated_at FROM projects WHERE user_id=? ORDER BY id',
     ).all(userId);
     const documents = db.prepare(
-      'SELECT id,title,content,project_id AS projectId,version,created_at AS createdAt,updated_at AS updatedAt FROM documents WHERE user_id=? ORDER BY id',
+      'SELECT id,title,content,project_id AS projectId,version,archived_at AS archivedAt,created_at AS createdAt,updated_at AS updatedAt FROM documents WHERE user_id=? ORDER BY id',
     ).all(userId);
     const projectFiles = db.prepare(
       'SELECT id,project_id AS projectId,original_name AS name,extension,mime_type AS mimeType,size_bytes AS sizeBytes,sha256,include_in_context AS includeInContext,content,created_at AS createdAt FROM project_files WHERE user_id=? ORDER BY project_id,id',

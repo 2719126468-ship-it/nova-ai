@@ -114,3 +114,32 @@
     .document-markdown-input, .document-markdown-preview { min-height: 55dvh; }
   }
 }
+
+/* Document archive: view tabs, card action, archived banner */
+.documents-view-tabs { display: flex; gap: 7px; margin: 0 0 16px; flex-wrap: wrap; }
+.documents-view-tabs button { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 6px 12px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font: inherit; font-size: 9px; border-radius: 3px; }
+.documents-view-tabs button.active { border-color: var(--accent); color: var(--accent-dark); background: var(--accent-soft); }
+.documents-view-tabs button span { padding: 1px 5px; border-radius: 8px; background: var(--surface-soft); font-size: 8px; }
+.document-card-wrap { position: relative; display: flex; flex-direction: column; min-width: 0; }
+.document-card-archive { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 32px; margin-top: 6px; border: 1px solid var(--line); background: transparent; color: var(--subtle); font: inherit; font-size: 8px; border-radius: 3px; }
+.document-card-archive:hover:not(:disabled) { border-color: var(--line-strong); color: var(--ink); }
+.document-card-archive:disabled { opacity: .5; cursor: wait; }
+.document-archived-banner { max-width: 940px; margin: 0 auto 14px; padding: 11px 14px; display: flex; align-items: center; gap: 10px; background: var(--surface-soft); border: 1px solid var(--line-strong); color: var(--muted); font-size: 9px; line-height: 1.6; }
+.document-archived-banner span { flex: 1; min-width: 0; }
+.document-archived-banner button { flex: 0 0 auto; min-height: 32px; padding: 5px 10px; border: 1px solid var(--accent); background: transparent; color: var(--accent-dark); font: inherit; font-size: 8px; border-radius: 3px; }
+.document-archived-banner button:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 600px) {
+  .documents-view-tabs button, .document-card-archive, .document-archived-banner button { min-height: 44px; }
+  .document-archived-banner { align-items: flex-start; flex-wrap: wrap; }
+  .document-archived-banner span { flex: 1 1 100%; }
+}
+
+/* Mobile: the editor topbar now holds four actions; stack them instead of
+   letting the grid column overflow the 360px viewport. */
+@media (max-width: 600px) {
+  .document-editor-topbar { grid-template-columns: 1fr; gap: 10px; }
+  .document-editor-topbar .back-link { grid-column: 1; grid-row: 1; }
+  .document-editor-actions { grid-column: 1; grid-row: 2; justify-content: flex-start; flex-wrap: wrap; gap: 6px; }
+  .document-editor-actions .button { flex: 1 1 auto; }
+  .document-save-state { grid-column: 1; grid-row: 3; }
+}

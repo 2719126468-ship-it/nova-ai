@@ -234,6 +234,20 @@ const migrations = [
       `);
     },
   },
+  {
+    version: 10,
+    name: 'document-archive',
+    up(database) {
+      const columns = new Set(database.prepare('PRAGMA table_info(documents)').all().map((column) => column.name));
+      if (!columns.has('archived_at')) {
+        database.exec('ALTER TABLE documents ADD COLUMN archived_at TEXT');
+      }
+      database.exec(`
+        CREATE INDEX IF NOT EXISTS idx_documents_user_archived_updated
+          ON documents(user_id, archived_at, updated_at DESC, id DESC);
+      `);
+    },
+  },
 
 ];
 

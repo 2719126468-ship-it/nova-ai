@@ -186,6 +186,44 @@ async function main() {
     const persisted = await page.$eval('textarea[aria-label="Markdown 文档内容"]', (node) => node.value);
     check('Saved document content survives a reload', persisted.includes(stamp), persisted.slice(0, 60));
 
+    // Archive round-trip from the editor and the list view.
+    const archived = await page.evaluate(async () => {
+      const button = [...document.querySelectorAll('.document-editor-actions button')]
+        .find((node) => (node.textContent || '').includes('归档'));
+      if (!button) return { clicked: false };
+      button.click();
+      return { clicked: true };
+    });
+    const archiveBanner = await page.waitForFunction(
+      () => document.body.innerText.includes('这篇文档已归档'),
+      { timeout: 15000 },
+    ).then(() => true).catch(() => false);
+    check('Document archive marks the editor as archived', archived.clicked && archiveBanner);
+
+    await page.goto(baseUrl + '/documents', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.documents-view-tabs button');
+    const hiddenFromActive = await page.evaluate(() => !document.body.innerText.includes('E2E 文档 ' + location.search));
+    await clickByText(page, '.documents-view-tabs button', '已归档');
+    await page.waitForFunction(
+      () => [...document.querySelectorAll('.document-card h3')].some((node) => node.textContent.includes('E2E 文档')),
+      { timeout: 15000 },
+    ).then(() => true).catch(() => false);
+    const archivedVisible = await page.evaluate(() => [...document.querySelectorAll('.document-card h3')]
+      .some((node) => node.textContent.includes('E2E 文档')));
+    check('Archived document moves to the archived tab', archivedVisible, 'activeHidden=' + hiddenFromActive);
+
+    const restored = await page.evaluate(async () => {
+      const button = [...document.querySelectorAll('.document-card-archive')]
+        .find((node) => (node.textContent || '').includes('恢复'));
+      if (!button) return false;
+      button.click();
+      return true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    const restoredGone = await page.evaluate(() => [...document.querySelectorAll('.document-card h3')]
+      .every((node) => !node.textContent.includes('E2E 文档')));
+    check('Restored document leaves the archived tab', restored && restoredGone);
+
     await page.goto(baseUrl + '/account', { waitUntil: 'domcontentloaded' });
     check('Session cookie keeps the account page authenticated', await page.evaluate(() => !document.body.innerText.includes('请先登录')));
 

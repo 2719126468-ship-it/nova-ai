@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowUpRight, Check, Clock3, Download, FilePlus2, FileText, FolderOpen, LoaderCircle, RefreshCw, Search, ShieldCheck, SplitSquareVertical, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowLeft, ArrowUpRight, Check, Clock3, Download, FilePlus2, FileText, FolderOpen, LoaderCircle, RefreshCw, Search, ShieldCheck, SplitSquareVertical, Trash2 } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -19,30 +19,60 @@ export function Documents() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
+  const [view, setView] = useState('active');
+  const [archivedCount, setArchivedCount] = useState(0);
+  const [busyId, setBusyId] = useState(null);
 
-  const fetchDocuments = useCallback(async () => {
-    const result = await api('/api/v1/documents?limit=100');
+  const fetchDocuments = useCallback(async (scope = view) => {
+    const result = await api('/api/v1/documents?limit=100&archived=' + scope);
+    setArchivedCount(Number(result.archivedCount) || 0);
     return Array.isArray(result.documents) ? result.documents : [];
-  }, []);
+  }, [view]);
 
   useEffect(() => {
     let active = true;
-    fetchDocuments()
+    fetchDocuments(view)
       .then((items) => { if (active) setDocuments(items); })
       .catch((cause) => { if (active) setError(cause.message); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [fetchDocuments]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
 
-  async function refreshDocuments() {
+  async function refreshDocuments(scope = view) {
     setLoading(true);
     setError('');
     try {
-      setDocuments(await fetchDocuments());
+      setDocuments(await fetchDocuments(scope));
     } catch (cause) {
       setError(cause.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  function switchView(next) {
+    if (next === view) return;
+    setView(next);
+    setQuery('');
+    setDocuments([]);
+    refreshDocuments(next);
+  }
+
+  async function setArchived(document, archived) {
+    if (busyId) return;
+    setBusyId(document.id);
+    setError('');
+    try {
+      await api('/api/v1/documents/' + document.id, {
+        method: 'PUT',
+        body: json({ archived, expectedVersion: document.version }),
+      });
+      await refreshDocuments();
+    } catch (cause) {
+      setError(cause.message);
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -89,26 +119,41 @@ export function Documents() {
           {creating ? <LoaderCircle size={15} className="spin" /> : <FilePlus2 size={15} />}
           新建文档
         </Button>
-        <button className="documents-icon-button" type="button" onClick={refreshDocuments} disabled={loading} aria-label="刷新文档列表"><RefreshCw size={15} /></button>
+        <button className="documents-icon-button" type="button" onClick={() => refreshDocuments()} disabled={loading} aria-label="刷新文档列表"><RefreshCw size={15} /></button>
       </div>
     </section>
+    <div className="documents-view-tabs" role="group" aria-label="文档视图">
+      <button type="button" aria-pressed={view === 'active'} className={view === 'active' ? 'active' : ''} onClick={() => switchView('active')}><FileText size={14} /> 进行中</button>
+      <button type="button" aria-pressed={view === 'archived'} className={view === 'archived' ? 'active' : ''} onClick={() => switchView('archived')}><Archive size={14} /> 已归档 {archivedCount ? <span>{archivedCount}</span> : null}</button>
+    </div>
     <ErrorNotice>{error}</ErrorNotice>
     {loading ? <Loading label="正在读取你的文档…" /> : visibleDocuments.length ? <div className="documents-grid">
-      {visibleDocuments.map((document) => <Link className="document-card" to={'/documents/' + document.id} key={document.id}>
-        <div className="document-card-top"><span className="document-card-icon"><FileText size={18} /></span><span className="document-card-version">V{document.version}</span></div>
-        <h3>{document.title}</h3>
-        <p>{document.contentLength ? document.contentLength.toLocaleString() + ' 个字符' : '从空白开始写作'}</p>
-        <div className="document-card-footer">
-          <span>{document.projectId ? <><FolderOpen size={12} /> 项目 #{document.projectId}</> : '个人文档'}</span>
-          <time>{formatDate(document.updatedAt)}</time>
-        </div>
-        <span className="document-card-open">打开文档 <ArrowUpRight size={13} /></span>
-      </Link>)}
+      {visibleDocuments.map((document) => <div className="document-card-wrap" key={document.id}>
+        <Link className="document-card" to={'/documents/' + document.id}>
+          <div className="document-card-top"><span className="document-card-icon"><FileText size={18} /></span><span className="document-card-version">V{document.version}</span></div>
+          <h3>{document.title}</h3>
+          <p>{document.contentLength ? document.contentLength.toLocaleString() + ' 个字符' : '从空白开始写作'}</p>
+          <div className="document-card-footer">
+            <span>{document.projectId ? <><FolderOpen size={12} /> 项目 #{document.projectId}</> : '个人文档'}</span>
+            <time>{formatDate(document.updatedAt)}</time>
+          </div>
+          <span className="document-card-open">打开文档 <ArrowUpRight size={13} /></span>
+        </Link>
+        <button
+          type="button"
+          className="document-card-archive"
+          onClick={() => setArchived(document, view !== 'archived')}
+          disabled={busyId === document.id}
+          aria-label={view === 'archived' ? '恢复文档到进行中' : '归档文档'}
+        >
+          {view === 'archived' ? <><ArchiveRestore size={12} /> 恢复</> : <><Archive size={12} /> 归档</>}
+        </button>
+      </div>)}
     </div> : <EmptyState
-      icon={FileText}
-      title={query ? '没有找到匹配的文档' : '你的文档空间还是空白'}
-      description={query ? '换一个标题关键词试试。' : '新建一篇 Markdown 文档，记录计划、研究或下一次创作。'}
-      action={<Button onClick={createDocument} disabled={creating}><FilePlus2 size={15} /> 创建第一篇文档</Button>}
+      icon={view === 'archived' ? Archive : FileText}
+      title={query ? '没有找到匹配的文档' : view === 'archived' ? '还没有归档的文档' : '你的文档空间还是空白'}
+      description={query ? '换一个标题关键词试试。' : view === 'archived' ? '归档的文档会保留内容，可随时恢复。' : '新建一篇 Markdown 文档，记录计划、研究或下一次创作。'}
+      action={view === 'archived' ? undefined : <Button onClick={createDocument} disabled={creating}><FilePlus2 size={15} /> 创建第一篇文档</Button>}
     />}
     <div className="documents-privacy-note"><ShieldCheck size={14} /> 文档默认仅自己可见；关联项目不会改变文档的账户归属。</div>
   </main>;
@@ -144,6 +189,7 @@ export function DocumentEditor() {
   const [retryKey, setRetryKey] = useState(0);
   const [preview, setPreview] = useState(false);
   const [copying, setCopying] = useState(false);
+  const [archiving, setArchiving] = useState(false);
 
   const versionRef = useRef(0);
   const savedSnapshotRef = useRef(EMPTY_SNAPSHOT);
@@ -316,6 +362,27 @@ export function DocumentEditor() {
     URL.revokeObjectURL(url);
   }
 
+  async function toggleArchive() {
+    if (!document || saving || dirty || archiving) return;
+    setArchiving(true);
+    setError('');
+    try {
+      const result = await api('/api/v1/documents/' + numericId, {
+        method: 'PUT',
+        body: json({ archived: !document.archivedAt, expectedVersion: versionRef.current }),
+      });
+      versionRef.current = result.document.version;
+      savedSnapshotRef.current = makeSnapshot(result.document);
+      setVersion(result.document.version);
+      setDocument(result.document);
+      setSaveStatus('saved');
+    } catch (cause) {
+      setError(cause.message);
+    } finally {
+      setArchiving(false);
+    }
+  }
+
   async function deleteDocument() {
     if (!window.confirm('删除这篇文档？此操作无法撤销。')) return;
     try {
@@ -346,11 +413,24 @@ export function DocumentEditor() {
       </div>
       <div className="document-editor-actions">
         <Button variant="outline" onClick={downloadMarkdown}><Download size={14} /> 导出 .md</Button>
+        <Button
+          variant="outline"
+          onClick={toggleArchive}
+          disabled={archiving || saving || dirty}
+          title={dirty || saving ? '请先等待自动保存完成' : undefined}
+        >
+          {document.archivedAt ? <><ArchiveRestore size={14} /> {archiving ? '恢复中…' : '恢复文档'}</> : <><Archive size={14} /> {archiving ? '归档中…' : '归档'}</>}
+        </Button>
         <Button variant="outline" onClick={saveAsCopy} disabled={copying || saving}><FilePlus2 size={14} /> 另存为副本</Button>
         <button type="button" className="documents-icon-button danger" onClick={deleteDocument} disabled={saving || dirty} aria-label="删除文档" title={saving || dirty ? '请先等待自动保存完成' : '删除文档'}><Trash2 size={15} /></button>
       </div>
     </div>
     <ErrorNotice>{error || projectLoadError}</ErrorNotice>
+    {document.archivedAt && <div className="document-archived-banner" role="status">
+      <Archive size={14} />
+      <span>这篇文档已归档（{formatDate(document.archivedAt)}）。归档只影响文档列表分组，内容和项目关联都会保留。</span>
+      <button type="button" onClick={toggleArchive} disabled={archiving || saving || dirty}>恢复到进行中</button>
+    </div>}
     {conflict && <div className="document-conflict-banner" role="alert">
       <div><strong>这篇文档已经在其他位置更新。</strong><p>{conflict.message} 你当前的本地内容仍保留在编辑器中。</p></div>
       <div><Button variant="outline" onClick={saveAsCopy} disabled={copying}>{copying ? '正在创建…' : '将本地内容另存为副本'}</Button><Button onClick={reloadLatest}>读取最新版本</Button></div>

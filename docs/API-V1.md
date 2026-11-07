@@ -121,10 +121,10 @@ All Document endpoints require an authenticated session. Every query and mutatio
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | /api/v1/documents | List owned documents with optional `projectId`, title query `q`, `limit` (1–100) and `offset` |
+| GET | /api/v1/documents | List owned documents with optional `projectId`, title query `q`, `archived` (`active` default / `archived` / `all`), `limit` (1–100) and `offset`; also returns `archivedCount` |
 | POST | /api/v1/documents | Create a Markdown document, optionally associated with an owned project |
 | GET | /api/v1/documents/:id | Read an owned document including its Markdown content and version |
-| PUT | /api/v1/documents/:id | Update title/content/project association using a required `expectedVersion` |
+| PUT | /api/v1/documents/:id | Update title/content/project association or set `archived` using a required `expectedVersion` |
 | DELETE | /api/v1/documents/:id | Delete an owned document |
 
 Create body: `{ "title": "Meeting notes", "content": "# Notes", "projectId": 12 }`. `projectId` is optional or null. Titles are trimmed and limited to 120 characters; Markdown content is limited to 200,000 JavaScript characters. List responses omit content and return `contentLength`; read/create/update responses return the complete document.

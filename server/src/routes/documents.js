@@ -7,6 +7,7 @@ import { isPositiveId } from '../utils.js';
 const router = Router();
 const documentFields = `
   id,title,content,project_id AS projectId,version,
+  archived_at AS archivedAt,
   created_at AS createdAt,updated_at AS updatedAt
 `;
 
@@ -20,12 +21,14 @@ const updateDocumentSchema = z.object({
   title: z.string().trim().min(1).max(120).optional(),
   content: z.string().max(200000).optional(),
   projectId: z.number().int().positive().nullable().optional(),
+  archived: z.boolean().optional(),
   expectedVersion: z.number().int().positive(),
 }).superRefine((value, ctx) => {
-  if (value.title === undefined && value.content === undefined && value.projectId === undefined) {
+  if (value.title === undefined && value.content === undefined
+    && value.projectId === undefined && value.archived === undefined) {
     ctx.addIssue({
       code: 'custom',
-      message: '至少提供 title、content 或 projectId 其中一个字段。',
+      message: '至少提供 title、content、projectId 或 archived 其中一个字段。',
     });
   }
 });
@@ -33,6 +36,7 @@ const updateDocumentSchema = z.object({
 const listQuerySchema = z.object({
   projectId: z.coerce.number().int().positive().optional(),
   q: z.string().trim().max(120).optional(),
+  archived: z.enum(['active', 'archived', 'all']).default('active'),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).max(10000).default(0),
 });
@@ -57,13 +61,15 @@ router.get('/', (req, res) => {
     });
   }
 
-  const { projectId, q, limit, offset } = parsed.data;
+  const { projectId, q, archived, limit, offset } = parsed.data;
   if (projectId !== undefined && !ownedProjectExists(projectId, req.user.id)) {
     return res.status(404).json({ error: 'PROJECT_NOT_FOUND', message: '项目不存在。' });
   }
 
   const filters = ['user_id=?'];
   const params = [req.user.id];
+  if (archived === 'active') filters.push('archived_at IS NULL');
+  else if (archived === 'archived') filters.push('archived_at IS NOT NULL');
   if (projectId !== undefined) {
     filters.push('project_id=?');
     params.push(projectId);
@@ -75,7 +81,7 @@ router.get('/', (req, res) => {
   const where = filters.join(' AND ');
   const total = db.prepare(`SELECT COUNT(*) AS count FROM documents WHERE ${where}`).get(...params).count;
   const documents = db.prepare(`
-    SELECT id,title,project_id AS projectId,version,
+    SELECT id,title,project_id AS projectId,version,archived_at AS archivedAt,
       length(content) AS contentLength,created_at AS createdAt,updated_at AS updatedAt
     FROM documents
     WHERE ${where}
@@ -83,8 +89,12 @@ router.get('/', (req, res) => {
     LIMIT ? OFFSET ?
   `).all(...params, limit, offset);
 
+  const archivedCount = db.prepare(
+    'SELECT COUNT(*) AS count FROM documents WHERE user_id=? AND archived_at IS NOT NULL',
+  ).get(req.user.id).count;
+
   res.set('Cache-Control', 'no-store');
-  res.json({ documents, total, limit, offset });
+  res.json({ documents, total, archivedCount, limit, offset, archived });
 });
 
 router.post('/', (req, res) => {
@@ -133,7 +143,7 @@ router.put('/:id', (req, res) => {
   const id = Number(req.params.id);
   const input = parsed.data;
   const current = db.prepare(
-    'SELECT id,title,content,project_id,version FROM documents WHERE id=? AND user_id=?',
+    'SELECT id,title,content,project_id,version,archived_at FROM documents WHERE id=? AND user_id=?',
   ).get(id, req.user.id);
   if (!current) return res.status(404).json({ error: 'NOT_FOUND', message: '文档不存在。' });
   if (input.expectedVersion !== current.version) {
@@ -149,14 +159,21 @@ router.put('/:id', (req, res) => {
     return res.status(404).json({ error: 'PROJECT_NOT_FOUND', message: '项目不存在。' });
   }
 
+  const archivedAt = input.archived === undefined
+    ? current.archived_at
+    : input.archived
+      ? (current.archived_at || new Date().toISOString())
+      : null;
+
   const result = db.prepare(`
     UPDATE documents
-    SET title=?,content=?,project_id=?,version=version+1,updated_at=CURRENT_TIMESTAMP
+    SET title=?,content=?,project_id=?,archived_at=?,version=version+1,updated_at=CURRENT_TIMESTAMP
     WHERE id=? AND user_id=? AND version=?
   `).run(
     input.title ?? current.title,
     input.content ?? current.content,
     nextProjectId,
+    archivedAt,
     id,
     req.user.id,
     input.expectedVersion,

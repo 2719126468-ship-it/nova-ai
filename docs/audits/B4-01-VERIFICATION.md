@@ -15,7 +15,8 @@
 | SEC-10 管理员审计 | 迁移 v9 新增 `admin_audit_logs`；角色变更、Provider 增改删、默认模型、Research 内容变更全部记录；写入前统一脱敏 | `administrator actions are audited without storing secrets or content`、`audit sanitizer drops credential-shaped fields at any depth` |
 | 错误监控 | 统一 `X-Request-Id`；错误按稳定错误码聚合并暴露管理员接口 | `error monitoring records stable codes and stays admin-only` |
 | SEC-04 备份恢复 | 在线备份 + 完整性校验 + sha256 清单 + 保留策略；恢复保留回滚副本 | `database backup verifies integrity and restores over the live file`；本机 CLI 演练 |
-| TD-19 E2E | 新增 `scripts/e2e-smoke.mjs`（puppeteer-core + 系统 Chromium），17 项浏览器检查 | 本机 17/17 通过；CI 新增 `browser-smoke` job |
+| TD-19 E2E | 新增 `scripts/e2e-smoke.mjs`（puppeteer-core + 系统 Chromium），20 项浏览器检查 | 本机 20/20 通过；CI 新增 `browser-smoke` job |
+| V0.2 文档归档 | 迁移 v10 `documents.archived_at`；列表 `archived=active\|archived\|all` + `archivedCount`；列表与编辑器均提供版本校验的归档/恢复 | `documents API enforces ownership, project isolation, validation, and optimistic concurrency`（含归档断言）；E2E 归档 → 已归档页 → 恢复三步 |
 | 部署形态 | `attachClientBuild()` 让 API 进程托管 `client/dist` 并回退 SPA 深链；客户端同源请求 | E2E 断言深链与注册后跳转 |
 
 ## 2. 自动化测试结果
@@ -40,10 +41,10 @@ dist/assets/index-*.js   463.95 kB │ gzip: 141.43 kB
 ### 浏览器端到端（本机 Android Chromium 152，1280×900 与 360×780）
 
 ```
-17/17 browser checks passed
+20/20 browser checks passed
 ```
 
-覆盖：服务启动与健康检查、SPA 深链、文档 CSP、注册并建立会话、Chat 未配置模型提示、Studio 建项目、Documents 新建 + 自动保存 + 刷新后仍在、账户页会话保持、360px 无横向溢出、移动端导航抽屉、Admin 监控/审计/Provider 三个面板、无未捕获页面错误。
+覆盖：服务启动与健康检查、SPA 深链、文档 CSP、注册并建立会话、Chat 未配置模型提示、Studio 建项目、Documents 新建 + 自动保存 + 刷新后仍在、文档归档/已归档分组/恢复、账户页会话保持、360px 无横向溢出、移动端导航抽屉、Admin 监控/审计/Provider 三个面板、无未捕获页面错误。
 
 ### 备份恢复演练
 

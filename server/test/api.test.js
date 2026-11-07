@@ -277,6 +277,25 @@ test('documents API enforces ownership, project isolation, validation, and optim
   assert.equal(db.prepare('SELECT title FROM documents WHERE id=? AND user_id=?')
     .get(document.id, ownerId).title, 'Research notes edited');
 
+  const archived = await owner.put('/api/v1/documents/' + document.id).set(originHeaders).send({
+    archived: true,
+    expectedVersion: 2,
+  }).expect(200);
+  assert.ok(archived.body.document.archivedAt);
+  const activeList = await owner.get('/api/v1/documents').expect(200);
+  assert.equal(activeList.body.documents.some((item) => item.id === document.id), false);
+  assert.ok(activeList.body.archivedCount >= 1);
+  const archivedList = await owner.get('/api/v1/documents?archived=archived').expect(200);
+  assert.equal(archivedList.body.documents.some((item) => item.id === document.id), true);
+  const allList = await owner.get('/api/v1/documents?archived=all').expect(200);
+  assert.equal(allList.body.documents.some((item) => item.id === document.id), true);
+  const restoredDocument = await owner.put('/api/v1/documents/' + document.id).set(originHeaders).send({
+    archived: false,
+    expectedVersion: archived.body.document.version,
+  }).expect(200);
+  assert.equal(restoredDocument.body.document.archivedAt, null);
+  await owner.get('/api/v1/documents?archived=nope').expect(400);
+
   await owner.delete('/api/v1/projects/' + ownerProject.body.project.id).set(originHeaders).expect(200);
   const unlinked = await owner.get('/api/v1/documents/' + document.id).expect(200);
   assert.equal(unlinked.body.document.projectId, null);
@@ -313,7 +332,7 @@ test('database migrations add message lifecycle fields and are idempotent', () =
   assert.ok(columns.has('status'));
   assert.ok(columns.has('error_code'));
   const versions = db.prepare('SELECT version FROM schema_migrations ORDER BY version').all();
-  assert.deepEqual(versions.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  assert.deepEqual(versions.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   const versionColumns = new Set(db.prepare('PRAGMA table_info(message_versions)').all().map((column) => column.name));
   assert.ok(versionColumns.has('message_id'));
   assert.ok(versionColumns.has('content'));
