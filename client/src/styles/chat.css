@@ -399,3 +399,15 @@
   .chat-document-dialog-heading h2 { font-size: 19px; }
   .chat-document-dialog-actions button { flex: 1; }
 }
+
+/* Keep dialogs and primary controls usable when the Android keyboard is open. */
+.chat-document-dialog { overscroll-behavior: contain; }
+@supports (height: 100dvh) {
+  .chat-document-dialog { max-height: min(88dvh, 680px); }
+}
+@media (max-width: 600px) {
+  .chat-document-dialog-actions button { min-height: 44px; }
+  .chat-document-dialog-close { min-width: 40px; min-height: 40px; }
+  .chat-composer .composer-bottom > button { min-width: 44px; min-height: 44px; }
+  .chat-model-state-actions button, .chat-model-state-actions a { min-height: 44px; }
+}
