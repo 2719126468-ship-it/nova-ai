@@ -16,9 +16,9 @@ test('Vite dev and preview servers bind to loopback by default', () => {
 
   assert.equal(clientPackage.scripts.dev, 'vite');
   assert.equal(clientPackage.scripts.preview, 'vite preview');
-  assert.match(viteConfig, /server:\s*\{\s*host:\s*['"]127\\.0\\.0\\.1['"]/);
-  assert.match(viteConfig, /preview:\s*\{\s*host:\s*['"]127\\.0\\.0\\.1['"]/);
-  assert.doesNotMatch(viteConfig, /host:\s*['"]0\\.0\\.0\\.0['"]/);
+  assert.match(viteConfig, /server:\s*\{\s*host:\s*['"]127\.0\.0\.1['"]/);
+  assert.match(viteConfig, /preview:\s*\{\s*host:\s*['"]127\.0\.0\.1['"]/);
+  assert.doesNotMatch(viteConfig, /host:\s*['"]0\.0\.0\.0['"]/);
 });
 
 test('Vite and Rolldown lockfile entries remain on patched releases', () => {
@@ -34,8 +34,8 @@ test('Vite and Rolldown lockfile entries remain on patched releases', () => {
   assert.equal(rolldown.version, '1.2.19');
 
   for (const [name, version] of Object.entries(rolldown.optionalDependencies)) {
-    const binding = lock.packages[`node_modules/${name}`];
-    assert.equal(binding?.version, version, `${name} lock entry is missing or out of sync`);
-    assert.ok(binding.integrity, `${name} lock entry is missing integrity metadata`);
+    const binding = lock.packages[\`node_modules/\${name}\`];
+    assert.equal(binding?.version, version, \`\${name} lock entry is missing or out of sync\`);
+    assert.ok(binding.integrity, \`\${name} lock entry is missing integrity metadata\`);
   }
 });
