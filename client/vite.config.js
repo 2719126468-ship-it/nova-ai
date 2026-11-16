@@ -8,5 +8,6 @@ const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
 export default defineConfig({
   envDir: workspaceRoot,
   plugins: [react()],
-  server: { host: '0.0.0.0', port: 5173, strictPort: true },
+  server: { host: '127.0.0.1', port: 5173, strictPort: true },
+  preview: { host: '127.0.0.1' },
 });
