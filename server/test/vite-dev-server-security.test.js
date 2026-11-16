@@ -34,8 +34,8 @@ test('Vite and Rolldown lockfile entries remain on patched releases', () => {
   assert.equal(rolldown.version, '1.2.19');
 
   for (const [name, version] of Object.entries(rolldown.optionalDependencies)) {
-    const binding = lock.packages[\`node_modules/\${name}\`];
-    assert.equal(binding?.version, version, \`\${name} lock entry is missing or out of sync\`);
-    assert.ok(binding.integrity, \`\${name} lock entry is missing integrity metadata\`);
+    const binding = lock.packages[`node_modules/${name}`];
+    assert.equal(binding?.version, version, `${name} lock entry is missing or out of sync`);
+    assert.ok(binding.integrity, `${name} lock entry is missing integrity metadata`);
   }
 });
