@@ -107,7 +107,7 @@ test('legacy SQLite databases upgrade through every migration without losing use
 
   assert.equal(database.prepare('SELECT email FROM users WHERE id=41').get().email, 'legacy@example.com');
   assert.equal(database.prepare('SELECT token_hash FROM sessions WHERE id=71').get().token_hash, 'legacy-session-hash');
-  assert.equal(database.prepare('SELECT title || ":" || content AS value FROM projects WHERE id=51').get().value,
+  assert.equal(database.prepare("SELECT title || ':' || content AS value FROM projects WHERE id=51").get().value,
     'Legacy project:legacy project content');
   assert.equal(database.prepare('SELECT title FROM conversations WHERE id=61').get().title, 'Legacy conversation');
   assert.deepEqual(database.prepare('SELECT id,role,content,status,error_code FROM messages ORDER BY id').all(), [
