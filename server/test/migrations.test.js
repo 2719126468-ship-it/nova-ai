@@ -8,7 +8,7 @@ import { runMigrations } from '../src/migrations.js';
 
 function createLegacySchema(database) {
   database.pragma('foreign_keys = ON');
-  database.exec(\`
+  database.exec(`
     CREATE TABLE users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -67,7 +67,7 @@ function createLegacySchema(database) {
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX idx_articles_status_published ON articles(status, published_at DESC);
-  \`);
+  `);
 
   database.prepare('INSERT INTO users (id,email,password_hash,name) VALUES (?,?,?,?)')
     .run(41, 'legacy@example.com', 'legacy-password-hash', 'Legacy User');
@@ -81,8 +81,8 @@ function createLegacySchema(database) {
     .run(81, 61, 'user', 'legacy user message');
   database.prepare('INSERT INTO messages (id,conversation_id,role,content) VALUES (?,?,?,?)')
     .run(82, 61, 'assistant', 'legacy assistant reply');
-  database.prepare(\`INSERT INTO articles (id,slug,title,category,summary,body,status,author_id,published_at)
-    VALUES (?,?,?,?,?,?,?,?,?)\`)
+  database.prepare(`INSERT INTO articles (id,slug,title,category,summary,body,status,author_id,published_at)
+    VALUES (?,?,?,?,?,?,?,?,?)`)
     .run(91, 'legacy-research', 'Legacy research', '研究', 'legacy summary', 'legacy article body', 'published', 41, '2026-01-01T00:00:00.000Z');
 }
 
@@ -125,7 +125,7 @@ test('legacy SQLite databases upgrade through every migration without losing use
     'model_context_windows', 'documents', 'project_files', 'admin_audit_logs', 'model_health_snapshots',
   ];
   const tables = new Set(database.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((row) => row.name));
-  for (const table of expectedTables) assert.ok(tables.has(table), \`missing migrated table: \${table}\`);
+  for (const table of expectedTables) assert.ok(tables.has(table), `missing migrated table: ${table}`);
 
   assert.deepEqual(database.prepare('PRAGMA foreign_key_check').all(), []);
   assert.equal(Object.values(database.prepare('PRAGMA integrity_check').get())[0], 'ok');
