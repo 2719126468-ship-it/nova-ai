@@ -2099,17 +2099,29 @@ test('administrator usage endpoint groups provider-reported usage by day, user, 
       SUM(CASE WHEN usage_source='provider' THEN 1 ELSE 0 END) AS providerReportedRequests,
       COALESCE(SUM(input_tokens),0) AS reportedInputTokens,
       COALESCE(SUM(output_tokens),0) AS reportedOutputTokens,
-      COALESCE(SUM(total_tokens),0) AS reportedTotalTokens
+      COALESCE(SUM(total_tokens),0) AS reportedTotalTokens,
+      COALESCE(SUM(CASE WHEN total_tokens IS NOT NULL THEN 1 ELSE 0 END),0) AS reportedTotalTokenValues
     FROM ai_usage
   `).get();
+  const baselineToday = db.prepare(`
+    SELECT COUNT(*) AS requests,
+      COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failed,
+      COALESCE(SUM(CASE WHEN total_tokens IS NOT NULL THEN 1 ELSE 0 END),0) AS reportedTotalTokenValues
+    FROM ai_usage WHERE date(created_at)=date('now')
+  `).get();
+  const baselineYesterday = db.prepare(`
+    SELECT COUNT(*) AS requests,
+      COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failed
+    FROM ai_usage WHERE date(created_at)=date('now','-1 day')
+  `).get();
   db.prepare("INSERT INTO ai_usage (request_id,user_id,provider_id,model_id,operation,status,duration_ms,input_tokens,output_tokens,total_tokens,usage_source,completed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)")
-    .run('admin-usage-record', adminUser.id, 'provider-a', 'provider-a:model-a', 'stream', 'succeeded', 120, 10, 5, 15, 'provider');
+    .run('admin-usage-record', adminUser.id, 'usage-aggregation-provider', 'usage-aggregation-provider:usage-aggregation-model', 'stream', 'succeeded', 120, 10, 5, 15, 'provider');
   db.prepare("INSERT INTO ai_usage (request_id,user_id,provider_id,model_id,operation,status,duration_ms) VALUES (?,?,?,?,?,?,?)")
-    .run('admin-usage-unknown', adminUser.id, 'provider-b', 'provider-b:model-b', 'chat', 'succeeded', 80);
+    .run('admin-usage-unknown', adminUser.id, 'usage-unknown-provider', 'usage-unknown-provider:usage-unknown-model', 'chat', 'succeeded', 80);
   db.prepare(`INSERT INTO ai_usage
     (request_id,user_id,provider_id,model_id,operation,status,error_code,duration_ms,created_at,completed_at)
     VALUES (?,?,?,?,?,?,?,?,datetime('now','-1 day'),CURRENT_TIMESTAMP)`)
-    .run('admin-usage-other-user', regularUser.id, 'provider-a', 'provider-a:model-a', 'chat', 'failed', 'AI_TIMEOUT', 90);
+    .run('admin-usage-other-user', regularUser.id, 'usage-aggregation-provider', 'usage-aggregation-provider:usage-aggregation-model', 'chat', 'failed', 'AI_TIMEOUT', 90);
 
   await admin.post('/api/v1/auth/login').set(originHeaders)
     .send({ email: 'usage-admin@example.com', password: 'usage-admin-password-strong' }).expect(200);
@@ -2122,22 +2134,24 @@ test('administrator usage endpoint groups provider-reported usage by day, user, 
   assert.equal(report.body.summary.reportedInputTokens, baseline.reportedInputTokens + 10);
   assert.equal(report.body.summary.reportedOutputTokens, baseline.reportedOutputTokens + 5);
   assert.equal(report.body.summary.reportedTotalTokens, baseline.reportedTotalTokens + 15);
-  assert.equal(report.body.summary.reportedTotalTokenValues, 1);
+  assert.equal(report.body.summary.reportedTotalTokenValues, baseline.reportedTotalTokenValues + 1);
   assert.equal(report.body.breakdowns.days, 14);
 
   const today = db.prepare("SELECT date('now') AS day").get().day;
   const yesterday = db.prepare("SELECT date('now','-1 day') AS day").get().day;
   const todayUsage = report.body.breakdowns.byDay.find((row) => row.day === today);
   const yesterdayUsage = report.body.breakdowns.byDay.find((row) => row.day === yesterday);
-  assert.equal(todayUsage.requests, 2);
-  assert.equal(yesterdayUsage.failed, 1);
+  assert.equal(todayUsage.requests, baselineToday.requests + 2);
+  assert.equal(todayUsage.reportedTotalTokenValues, baselineToday.reportedTotalTokenValues + 1);
+  assert.equal(yesterdayUsage.requests, baselineYesterday.requests + 1);
+  assert.equal(yesterdayUsage.failed, baselineYesterday.failed + 1);
 
   const adminUsage = report.body.breakdowns.byUser.find((row) => row.userId === adminUser.id);
   const regularUsage = report.body.breakdowns.byUser.find((row) => row.userId === regularUser.id);
   assert.equal(adminUsage.requests, 2);
   assert.equal(regularUsage.failed, 1);
 
-  const modelUsage = report.body.breakdowns.byModel.find((row) => row.modelId === 'provider-a:model-a');
+  const modelUsage = report.body.breakdowns.byModel.find((row) => row.modelId === 'usage-aggregation-provider:usage-aggregation-model');
   assert.equal(modelUsage.requests, 2);
   assert.equal(modelUsage.reportedTotalTokens, 15);
   assert.equal(modelUsage.reportedTotalTokenValues, 1);
