@@ -10,7 +10,7 @@ export default function Admin() {
   const [searchParams] = useSearchParams();
   const [tab, setTab] = useState(() => {
     const requested = searchParams.get('tab');
-    return ['providers', 'audit', 'monitoring'].includes(requested) ? requested : 'overview';
+    return ['providers', 'usage', 'audit', 'monitoring'].includes(requested) ? requested : 'overview';
   });
   const [overview, setOverview] = useState(null);
   const [users, setUsers] = useState([]);
@@ -19,6 +19,7 @@ export default function Admin() {
   const [showEditor, setShowEditor] = useState(false);
   const [auditLogs, setAuditLogs] = useState([]);
   const [monitoring, setMonitoring] = useState(null);
+  const [usageData, setUsageData] = useState(null);
   const [sendingTestAlert, setSendingTestAlert] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -26,12 +27,13 @@ export default function Admin() {
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const [stats, memberData, articleData, auditData, monitorData] = await Promise.all([
+      const [stats, memberData, articleData, auditData, monitorData, usageReport] = await Promise.all([
         api('/api/admin/overview'), api('/api/admin/users'), api('/api/admin/articles'),
         api('/api/v1/admin/audit-logs?limit=50'), api('/api/v1/admin/monitoring'),
+        api('/api/v1/admin/usage?limit=50'),
       ]);
       setOverview(stats); setUsers(memberData.users); setArticles(articleData.articles);
-      setAuditLogs(auditData.logs || []); setMonitoring(monitorData);
+      setAuditLogs(auditData.logs || []); setMonitoring(monitorData); setUsageData(usageReport);
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
   }, []);
@@ -70,7 +72,7 @@ export default function Admin() {
     try { await api(`/api/research/${item.id}`, { method: 'DELETE' }); await load(); }
     catch (e) { setError(e.message); }
   }
-  const tabs = [{ id: 'overview', label: '概览', icon: LayoutDashboard }, { id: 'users', label: '用户', icon: Users }, { id: 'articles', label: '研究内容', icon: BookOpen }, { id: 'providers', label: '模型供应商', icon: Server }, { id: 'audit', label: '审计日志', icon: ScrollText }, { id: 'monitoring', label: '错误监控', icon: AlertTriangle }];
+  const tabs = [{ id: 'overview', label: '概览', icon: LayoutDashboard }, { id: 'users', label: '用户', icon: Users }, { id: 'articles', label: '研究内容', icon: BookOpen }, { id: 'providers', label: '模型供应商', icon: Server }, { id: 'usage', label: 'AI 用量', icon: Activity }, { id: 'audit', label: '审计日志', icon: ScrollText }, { id: 'monitoring', label: '错误监控', icon: AlertTriangle }];
   return <main className="page-wrap container-wide admin-page"><PageIntro eyebrow="NOVA OPERATIONS / ADMIN CONSOLE" title="系统控制台。" description="查看平台运行数据、管理用户权限，并维护 NOVA Research 内容。" actions={<Button variant="outline" onClick={load}><RefreshCw size={15} /> 刷新数据</Button>} />
     <ErrorNotice>{error}</ErrorNotice>
     <div className="admin-shell"><aside className="admin-sidebar"><span className="admin-sidebar-title">MANAGEMENT</span>{tabs.map(({ id, label, icon: Icon }) => <button key={id} className={tab === id ? 'active' : ''} onClick={() => { setTab(id); setShowEditor(false); }}><Icon size={16} />{label}</button>)}<div className="admin-sidebar-footer"><ShieldCheck size={16} /><span>ADMIN ACCESS<br /><b>ROLE VERIFIED</b></span></div></aside>
@@ -83,6 +85,49 @@ export default function Admin() {
           {!auditLogs.length ? <div className="table-empty">暂时没有管理员操作记录。</div> : <div className="admin-table-scroll"><table className="admin-table"><thead><tr><th>时间</th><th>操作者</th><th>动作</th><th>目标</th><th>详情</th></tr></thead><tbody>
             {auditLogs.map((entry) => <tr key={entry.id}><td>{new Date(entry.createdAt.replace(' ', 'T') + 'Z').toLocaleString()}</td><td>{entry.actorEmail || (entry.actorUserId ? '#' + entry.actorUserId : '已删除账户')}</td><td><code>{entry.action}</code></td><td>{entry.targetType}{entry.targetId ? ' · ' + entry.targetId : ''}</td><td><small>{entry.metadata ? JSON.stringify(entry.metadata) : '—'}</small></td></tr>)}
           </tbody></table></div>}</>}
+        {tab === 'usage' && <><div className="admin-panel-heading"><div><span className="eyebrow">AI / USAGE ANALYTICS</span><h2>AI 用量统计</h2></div><span className="table-count">{usageData?.records?.length ?? 0} 条最近请求</span></div>
+          <p className="admin-panel-note">展示最近 14 天、用户和模型维度的请求量。Token 数只汇总 Provider 实际返回的用量；未返回的值显示为“未知”，不会用字符数估算。此处不读取或展示提示词、回答正文和 API Key。</p>
+          <div className="admin-stats-grid">
+            <div><Activity size={18} /><span>累计请求</span><strong>{usageData?.summary?.requests ?? 0}</strong><small>持久化记录</small></div>
+            <div><ShieldCheck size={18} /><span>成功请求</span><strong>{usageData?.summary?.succeeded ?? 0}</strong><small>已完成生成</small></div>
+            <div><AlertTriangle size={18} /><span>失败请求</span><strong>{usageData?.summary?.failed ?? 0}</strong><small>未包含取消</small></div>
+            <div><FileText size={18} /><span>Provider 报告 Token</span><strong>{usageData?.summary?.reportedTotalTokenValues ? Number(usageData.summary.reportedTotalTokens).toLocaleString() : '未知'}</strong><small>{usageData?.summary?.providerReportedRequests ?? 0} 次请求含 Provider 用量</small></div>
+          </div>
+          <UsageTable title="每日请求（最近 14 天）" rows={usageData?.breakdowns?.byDay || []} rowKey={(row) => row.day} emptyLabel="最近 14 天没有生成记录。" columns={[
+            { label: '日期', render: (row) => row.day },
+            { label: '请求', render: (row) => row.requests },
+            { label: '成功', render: (row) => row.succeeded },
+            { label: '失败', render: (row) => row.failed },
+            { label: '取消', render: (row) => row.cancelled },
+            { label: 'Provider Token', render: (row) => formatReportedTokens(row) },
+          ]} />
+          <UsageTable title="按模型统计（前 10）" rows={usageData?.breakdowns?.byModel || []} rowKey={(row) => row.providerId + ':' + row.modelId} emptyLabel="还没有模型用量记录。" columns={[
+            { label: 'Provider', render: (row) => row.providerId },
+            { label: '模型', render: (row) => row.modelId },
+            { label: '请求', render: (row) => row.requests },
+            { label: '成功', render: (row) => row.succeeded },
+            { label: '失败', render: (row) => row.failed },
+            { label: 'Provider Token', render: (row) => formatReportedTokens(row) },
+          ]} />
+          <UsageTable title="按账户统计（前 10）" rows={usageData?.breakdowns?.byUser || []} rowKey={(row) => row.userId} emptyLabel="还没有账户用量记录。" columns={[
+            { label: '账户 ID', render: (row) => '#' + row.userId },
+            { label: '请求', render: (row) => row.requests },
+            { label: '成功', render: (row) => row.succeeded },
+            { label: '失败', render: (row) => row.failed },
+            { label: '取消', render: (row) => row.cancelled },
+            { label: 'Provider Token', render: (row) => formatReportedTokens(row) },
+          ]} />
+          <UsageTable title="最近请求记录" rows={usageData?.records || []} rowKey={(row) => row.request_id} emptyLabel="尚无 AI 请求记录。" columns={[
+            { label: '时间', render: (row) => formatUsageTime(row.created_at) },
+            { label: '账户', render: (row) => '#' + row.user_id },
+            { label: '模型', render: (row) => row.model_id },
+            { label: '操作', render: (row) => row.operation },
+            { label: '状态', render: (row) => row.status },
+            { label: '错误码', render: (row) => row.error_code || '—' },
+            { label: '耗时', render: (row) => row.duration_ms === null ? '—' : row.duration_ms + ' ms' },
+            { label: 'Provider Token', render: (row) => row.total_tokens === null ? '未知' : Number(row.total_tokens).toLocaleString() },
+          ]} />
+        </>}
         {tab === 'monitoring' && <><div className="admin-panel-heading"><div><span className="eyebrow">RELIABILITY / ERROR MONITORING</span><h2>错误监控</h2></div><span className="table-count">进程运行 {monitoring?.uptimeSeconds ?? 0}s</span></div>
           <p className="admin-panel-note">按稳定错误码统计进程启动以来的失败请求，只保留类别、状态码、路由与请求 ID；不保存提示词、回答正文或密钥。进程重启后计数清零。</p>
           <div className="admin-table-card">
@@ -112,4 +157,28 @@ export default function Admin() {
 function UserTable({ users, onRoleChange }) {
   if (!users.length) return <div className="table-empty">目前没有用户记录。</div>;
   return <div className="admin-table-scroll"><table className="admin-table"><thead><tr><th>用户</th><th>邮箱</th><th>角色</th><th>创建时间</th><th>操作</th></tr></thead><tbody>{users.map((member) => <tr key={member.id}><td><div className="table-user"><span>{member.name?.slice(0, 1)?.toUpperCase() || 'N'}</span><strong>{member.name}</strong></div></td><td>{member.email}</td><td><span className={`role-pill ${member.role}`}>{member.role}</span></td><td>{new Date(`${member.created_at.replace(' ', 'T')}Z`).toLocaleDateString()}</td><td><select aria-label={`更改 ${member.name} 角色`} value={member.role} onChange={(e) => onRoleChange(member, e.target.value)}><option value="user">user</option><option value="admin">admin</option></select></td></tr>)}</tbody></table></div>;
+}
+
+function formatReportedTokens(row) {
+  return row.reportedTotalTokenValues > 0
+    ? Number(row.reportedTotalTokens).toLocaleString()
+    : '未知';
+}
+
+function formatUsageTime(value) {
+  if (!value) return '—';
+  const date = new Date(value.includes('T') ? value : value.replace(' ', 'T') + 'Z');
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function UsageTable({ title, rows, columns, rowKey, emptyLabel }) {
+  return <div className="admin-table-card">
+    <div className="admin-table-heading"><h3>{title}</h3><span className="table-count">{rows.length} 条</span></div>
+    {!rows.length ? <div className="table-empty">{emptyLabel}</div> : <div className="admin-table-scroll"><table className="admin-table">
+      <thead><tr>{columns.map((column) => <th key={column.label}>{column.label}</th>)}</tr></thead>
+      <tbody>{rows.map((row, index) => <tr key={rowKey(row) || index}>
+        {columns.map((column) => <td key={column.label}>{column.render(row)}</td>)}
+      </tr>)}</tbody>
+    </table></div>}
+  </div>;
 }

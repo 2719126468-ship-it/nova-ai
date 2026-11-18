@@ -2074,7 +2074,7 @@ test('non-streaming client disconnect aborts upstream request and releases the g
   }
 });
 
-test('administrator usage endpoint returns stored records and provider-reported token totals', async () => {
+test('administrator usage endpoint groups provider-reported usage by day, user, and model without exposing prompts', async () => {
   const admin = request.agent(app);
   await admin.post('/api/v1/auth/register').set(originHeaders).send({
     email: 'usage-admin@example.com',
@@ -2083,40 +2083,81 @@ test('administrator usage endpoint returns stored records and provider-reported 
   }).expect(201);
   const adminUser = db.prepare('SELECT id FROM users WHERE email=?').get('usage-admin@example.com');
   db.prepare("UPDATE users SET role='admin' WHERE id=?").run(adminUser.id);
+
+  const regular = request.agent(app);
+  await regular.post('/api/v1/auth/register').set(originHeaders).send({
+    email: 'usage-regular@example.com',
+    name: 'Usage Regular',
+    password: 'usage-regular-password-strong',
+  }).expect(201);
   const baseline = db.prepare(`
     SELECT COUNT(*) AS requests,
-      SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END) AS succeeded,
-      SUM(CASE WHEN usage_source='provider' THEN 1 ELSE 0 END) AS providerReportedRequests,
+      COALESCE(SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END),0) AS succeeded,
+      COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failed,
+      COALESCE(SUM(CASE WHEN usage_source='provider' THEN 1 ELSE 0 END),0) AS providerReportedRequests,
       COALESCE(SUM(input_tokens),0) AS reportedInputTokens,
       COALESCE(SUM(output_tokens),0) AS reportedOutputTokens,
-      COALESCE(SUM(total_tokens),0) AS reportedTotalTokens
+      COALESCE(SUM(total_tokens),0) AS reportedTotalTokens,
+      COALESCE(SUM(CASE WHEN total_tokens IS NOT NULL THEN 1 ELSE 0 END),0) AS reportedTotalTokenValues
     FROM ai_usage
   `).get();
+  const baselineToday = db.prepare(`
+    SELECT COUNT(*) AS requests,
+      COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failed,
+      COALESCE(SUM(CASE WHEN total_tokens IS NOT NULL THEN 1 ELSE 0 END),0) AS reportedTotalTokenValues
+    FROM ai_usage WHERE date(created_at)=date('now')
+  `).get();
+  const baselineYesterday = db.prepare(`
+    SELECT COUNT(*) AS requests,
+      COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failed
+    FROM ai_usage WHERE date(created_at)=date('now','-1 day')
+  `).get();
   db.prepare("INSERT INTO ai_usage (request_id,user_id,provider_id,model_id,operation,status,duration_ms,input_tokens,output_tokens,total_tokens,usage_source,completed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)")
-    .run('admin-usage-record', adminUser.id, 'provider-a', 'provider-a:model-a', 'stream', 'succeeded', 120, 10, 5, 15, 'provider');
+    .run('admin-usage-record', adminUser.id, 'usage-aggregation-provider', 'usage-aggregation-provider:usage-aggregation-model', 'stream', 'succeeded', 120, 10, 5, 15, 'provider');
   db.prepare("INSERT INTO ai_usage (request_id,user_id,provider_id,model_id,operation,status,duration_ms) VALUES (?,?,?,?,?,?,?)")
-    .run('admin-usage-unknown', adminUser.id, 'provider-b', 'provider-b:model-b', 'chat', 'succeeded', 80);
+    .run('admin-usage-unknown', adminUser.id, 'usage-unknown-provider', 'usage-unknown-provider:usage-unknown-model', 'chat', 'succeeded', 80);
+  db.prepare(`INSERT INTO ai_usage
+    (request_id,user_id,provider_id,model_id,operation,status,error_code,duration_ms,created_at,completed_at)
+    VALUES (?,?,?,?,?,?,?,?,datetime('now','-1 day'),CURRENT_TIMESTAMP)`)
+    .run('admin-usage-other-user', adminUser.id, 'usage-aggregation-provider', 'usage-aggregation-provider:usage-aggregation-model', 'chat', 'failed', 'AI_TIMEOUT', 90);
 
   await admin.post('/api/v1/auth/login').set(originHeaders)
     .send({ email: 'usage-admin@example.com', password: 'usage-admin-password-strong' }).expect(200);
   const report = await admin.get('/api/v1/admin/usage?limit=10').expect(200);
-  assert.equal(report.body.summary.requests, baseline.requests + 2);
+  assert.equal(report.headers['cache-control'], 'no-store');
+  assert.equal(report.body.summary.requests, baseline.requests + 3);
   assert.equal(report.body.summary.succeeded, baseline.succeeded + 2);
+  assert.equal(report.body.summary.failed, baseline.failed + 1);
   assert.equal(report.body.summary.providerReportedRequests, baseline.providerReportedRequests + 1);
   assert.equal(report.body.summary.reportedInputTokens, baseline.reportedInputTokens + 10);
   assert.equal(report.body.summary.reportedOutputTokens, baseline.reportedOutputTokens + 5);
   assert.equal(report.body.summary.reportedTotalTokens, baseline.reportedTotalTokens + 15);
+  assert.equal(report.body.summary.reportedTotalTokenValues, baseline.reportedTotalTokenValues + 1);
+  assert.equal(report.body.breakdowns.days, 14);
+
+  const today = db.prepare("SELECT date('now') AS day").get().day;
+  const yesterday = db.prepare("SELECT date('now','-1 day') AS day").get().day;
+  const todayUsage = report.body.breakdowns.byDay.find((row) => row.day === today);
+  const yesterdayUsage = report.body.breakdowns.byDay.find((row) => row.day === yesterday);
+  assert.equal(todayUsage.requests, baselineToday.requests + 2);
+  assert.equal(todayUsage.reportedTotalTokenValues, baselineToday.reportedTotalTokenValues + 1);
+  assert.equal(yesterdayUsage.requests, baselineYesterday.requests + 1);
+  assert.equal(yesterdayUsage.failed, baselineYesterday.failed + 1);
+
+  const adminUsage = report.body.breakdowns.byUser.find((row) => row.userId === adminUser.id);
+  assert.equal(adminUsage.requests, 3);
+  assert.equal(adminUsage.failed, 1);
+
+  const modelUsage = report.body.breakdowns.byModel.find((row) => row.modelId === 'usage-aggregation-provider:usage-aggregation-model');
+  assert.equal(modelUsage.requests, 2);
+  assert.equal(modelUsage.reportedTotalTokens, 15);
+  assert.equal(modelUsage.reportedTotalTokenValues, 1);
+
   assert.ok(report.body.records.every((record) => !Object.hasOwn(record, 'content')));
   const unknown = report.body.records.find((record) => record.request_id === 'admin-usage-unknown');
   assert.equal(unknown.total_tokens, null);
   assert.equal(unknown.usage_source, null);
 
-  const regular = request.agent(app);
-  await regular.post('/api/v1/auth/register').set(originHeaders).send({
-    email: 'usage-regular@example.com',
-    name: 'Regular User',
-    password: 'usage-regular-password-strong',
-  }).expect(201);
   await regular.post('/api/v1/auth/login').set(originHeaders)
     .send({ email: 'usage-regular@example.com', password: 'usage-regular-password-strong' }).expect(200);
   await regular.get('/api/v1/admin/usage').expect(403);

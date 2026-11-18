@@ -164,19 +164,68 @@ router.get('/usage', (req, res) => {
       COALESCE(SUM(CASE WHEN usage_source='provider' THEN 1 ELSE 0 END),0) AS providerReportedRequests,
       COALESCE(SUM(input_tokens),0) AS reportedInputTokens,
       COALESCE(SUM(output_tokens),0) AS reportedOutputTokens,
-      COALESCE(SUM(total_tokens),0) AS reportedTotalTokens
+      COALESCE(SUM(total_tokens),0) AS reportedTotalTokens,
+      COALESCE(SUM(CASE WHEN total_tokens IS NOT NULL THEN 1 ELSE 0 END),0) AS reportedTotalTokenValues
     FROM ai_usage
   `).get();
+  const byDay = db.prepare(`
+    SELECT
+      date(created_at) AS day,
+      COUNT(*) AS requests,
+      COALESCE(SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END),0) AS succeeded,
+      COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failed,
+      COALESCE(SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END),0) AS cancelled,
+      COALESCE(SUM(CASE WHEN usage_source='provider' THEN 1 ELSE 0 END),0) AS providerReportedRequests,
+      COALESCE(SUM(total_tokens),0) AS reportedTotalTokens,
+      COALESCE(SUM(CASE WHEN total_tokens IS NOT NULL THEN 1 ELSE 0 END),0) AS reportedTotalTokenValues
+    FROM ai_usage
+    WHERE date(created_at) >= date('now','-13 days')
+    GROUP BY date(created_at)
+    ORDER BY day DESC
+  `).all();
+  const byUser = db.prepare(`
+    SELECT
+      user_id AS userId,
+      COUNT(*) AS requests,
+      COALESCE(SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END),0) AS succeeded,
+      COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failed,
+      COALESCE(SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END),0) AS cancelled,
+      COALESCE(SUM(CASE WHEN usage_source='provider' THEN 1 ELSE 0 END),0) AS providerReportedRequests,
+      COALESCE(SUM(total_tokens),0) AS reportedTotalTokens,
+      COALESCE(SUM(CASE WHEN total_tokens IS NOT NULL THEN 1 ELSE 0 END),0) AS reportedTotalTokenValues
+    FROM ai_usage
+    GROUP BY user_id
+    ORDER BY requests DESC,user_id ASC
+    LIMIT 10
+  `).all();
+  const byModel = db.prepare(`
+    SELECT
+      provider_id AS providerId,
+      model_id AS modelId,
+      COUNT(*) AS requests,
+      COALESCE(SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END),0) AS succeeded,
+      COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failed,
+      COALESCE(SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END),0) AS cancelled,
+      COALESCE(SUM(CASE WHEN usage_source='provider' THEN 1 ELSE 0 END),0) AS providerReportedRequests,
+      COALESCE(SUM(total_tokens),0) AS reportedTotalTokens,
+      COALESCE(SUM(CASE WHEN total_tokens IS NOT NULL THEN 1 ELSE 0 END),0) AS reportedTotalTokenValues
+    FROM ai_usage
+    GROUP BY provider_id,model_id
+    ORDER BY requests DESC,provider_id ASC,model_id ASC
+    LIMIT 10
+  `).all();
   const records = db.prepare(`
     SELECT request_id,user_id,provider_id,model_id,operation,status,error_code,duration_ms,
       input_tokens,output_tokens,total_tokens,usage_source,created_at,completed_at
     FROM ai_usage ORDER BY id DESC LIMIT ?
   `).all(limit);
+  res.set('Cache-Control', 'no-store');
   res.json({
     summary: {
       ...summary,
       note: 'Token totals include only values reported by upstream providers; null values are unknown, not zero estimates.',
     },
+    breakdowns: { days: 14, byDay, byUser, byModel },
     records,
   });
 });
