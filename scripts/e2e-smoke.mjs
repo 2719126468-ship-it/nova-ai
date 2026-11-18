@@ -362,6 +362,12 @@ async function main() {
     const Database = (await import('better-sqlite3')).default;
     const handle = new Database(dbPath);
     handle.prepare("UPDATE users SET role='admin' WHERE email=?").run(email);
+    const adminUserId = handle.prepare('SELECT id FROM users WHERE email=?').get(email).id;
+    handle.prepare(`
+      INSERT INTO ai_usage
+        (request_id,user_id,provider_id,model_id,operation,status,duration_ms,input_tokens,output_tokens,total_tokens,usage_source,completed_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+    `).run('e2e-admin-usage-record', adminUserId, 'e2e-provider', 'e2e-provider:e2e-model', 'chat', 'succeeded', 75, 12, 6, 18, 'provider');
     handle.close();
 
     await page.setViewport({ width: 1280, height: 900 });
@@ -378,6 +384,19 @@ async function main() {
       }))), consoleErrors.slice(-4).join(' | '));
     }
     check('Admin monitoring panel renders', monitoringReady);
+
+    await page.goto(baseUrl + '/admin?tab=usage', { waitUntil: 'domcontentloaded' });
+    const usageReady = await page.waitForFunction(
+      () => document.body.innerText.includes('AI 用量统计') && document.body.innerText.includes('e2e-provider:e2e-model'),
+      { timeout: 20000 },
+    ).then(() => true).catch(() => false);
+    check('Admin usage panel renders provider-reported records', usageReady);
+    await page.setViewport({ width: 360, height: 780, isMobile: true, hasTouch: true });
+    await page.goto(baseUrl + '/admin?tab=usage', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => document.body.innerText.includes('AI 用量统计'), { timeout: 20000 });
+    const usageOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    check('Admin usage panel fits 360px viewport without page overflow', usageOverflow <= 2, 'overflow=' + usageOverflow + 'px');
+    await page.setViewport({ width: 1280, height: 900 });
 
     await page.goto(baseUrl + '/admin?tab=audit', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => document.body.innerText.includes('管理员审计日志'), { timeout: 20000 });

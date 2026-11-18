@@ -286,7 +286,7 @@ Records contain a random request ID, account ID, provider/model ID, operation, l
 
 Token fields remain `null` when the Provider does not return usage metadata. NOVA does not infer exact tokens from character counts, and it does not calculate monetary cost without trusted provider pricing and usage data.
 
-Administrators can read the latest records and aggregate totals through `GET /api/v1/admin/usage?limit=50` (administrator session required; limit is clamped to 1–100). The aggregate labels explicitly refer to Provider-reported token values. Account JSON export includes the account's own usage history; deleting an account deletes its usage records through the user foreign-key cascade.
+Administrators can read the latest records, lifetime totals, a 14-day daily breakdown, and top-10 user/model breakdowns through `GET /api/v1/admin/usage?limit=50` (administrator session required; limit is clamped to 1–100; response is `Cache-Control: no-store`). The breakdowns contain request lifecycle counts and Provider-reported token totals; a separate count indicates how many records supplied a total-token value, so unknown usage is not presented as zero. No prompt or assistant content is returned. Account JSON export includes the account's own usage history; deleting an account deletes its usage records through the user foreign-key cascade.
 
 ## Generation limits
 
