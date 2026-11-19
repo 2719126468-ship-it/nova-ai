@@ -159,6 +159,32 @@ async function main() {
     const chatBody = chatUnconfigured ? '' : await page.evaluate(() => document.body.innerText.slice(0, 400));
     check('Chat shows explicit unconfigured-model guidance instead of faking answers', chatUnconfigured, chatBody);
 
+    const preservedDraft = 'NOVA E2E no-provider draft ' + Date.now();
+    const chatComposer = await page.waitForSelector('.chat-composer textarea', { timeout: 15000 });
+    await chatComposer.type(preservedDraft);
+    await page.click('.chat-composer button[type="submit"]');
+    const draftPreserved = await page.waitForFunction((expected) => {
+      const textarea = document.querySelector('.chat-composer textarea');
+      return textarea?.value === expected && document.body.innerText.includes('当前输入已保留');
+    }, { timeout: 5000 }, preservedDraft).then(() => true).catch(() => false);
+    check('Chat preserves the unsent draft when no model is configured', draftPreserved);
+
+    const configurationLink = await page.$('.chat-model-state.is-unconfigured a[href="/models"]');
+    const configurationHref = configurationLink
+      ? await page.evaluate((element) => element.getAttribute('href'), configurationLink)
+      : null;
+    check('Chat exposes the public model configuration guide', configurationHref === '/models');
+    if (configurationLink && configurationHref === '/models') {
+      await configurationLink.click();
+      const configurationPageReady = await page.waitForFunction(
+        () => location.pathname === '/models' && document.body.innerText.includes('需要的配置项'),
+        { timeout: 15000 },
+      ).then(() => true).catch(() => false);
+      check('Chat configuration link opens the model setup instructions', configurationPageReady, await page.evaluate(() => location.pathname));
+    } else {
+      check('Chat configuration link opens the model setup instructions', false, 'Missing /models link');
+    }
+
     await page.goto(baseUrl + '/studio', { waitUntil: 'domcontentloaded' });
     const studioReady = await page.waitForSelector('.create-project-form input', { timeout: 20000 }).then(() => true).catch(() => false);
     if (!studioReady) {

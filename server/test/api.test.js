@@ -771,6 +771,12 @@ test('upstream authentication, rate-limit, server, and empty-stream failures are
       } else if (prompt.includes('provider-403')) {
         outgoing.writeHead(403, { 'Content-Type': 'application/json' });
         outgoing.end(JSON.stringify({ error: 'upstream permission detail' }));
+      } else if (prompt.includes('provider-408')) {
+        outgoing.writeHead(408, { 'Content-Type': 'application/json' });
+        outgoing.end(JSON.stringify({ error: 'upstream request timeout detail' }));
+      } else if (prompt.includes('provider-504')) {
+        outgoing.writeHead(504, { 'Content-Type': 'application/json' });
+        outgoing.end(JSON.stringify({ error: 'upstream gateway timeout detail' }));
       } else if (prompt.includes('provider-400')) {
         outgoing.writeHead(400, { 'Content-Type': 'application/json' });
         outgoing.end(JSON.stringify({ error: 'invalid provider request detail' }));
@@ -788,6 +794,9 @@ test('upstream authentication, rate-limit, server, and empty-stream failures are
       } else if (prompt.includes('provider-malformed')) {
         outgoing.writeHead(200, { 'Content-Type': 'text/event-stream' });
         outgoing.end('data: {not valid json}\n\n');
+      } else if (prompt.includes('provider-stream-error')) {
+        outgoing.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        outgoing.end('data: {"error":{"message":"private provider stream detail"}}\n\n');
       } else {
         outgoing.writeHead(200, { 'Content-Type': 'text/event-stream' });
         outgoing.end('data: [DONE]\n\n');
@@ -808,11 +817,14 @@ test('upstream authentication, rate-limit, server, and empty-stream failures are
     const cases = [
       ['provider-401', 'AI_PROVIDER_AUTH_FAILED'],
       ['provider-403', 'AI_PROVIDER_AUTH_FAILED'],
+      ['provider-408', 'AI_TIMEOUT'],
+      ['provider-504', 'AI_TIMEOUT'],
       ['provider-400', 'AI_PROVIDER_REJECTED'],
       ['provider-429', 'AI_PROVIDER_RATE_LIMITED'],
       ['provider-503', 'AI_PROVIDER_UNAVAILABLE'],
       ['provider-empty', 'AI_EMPTY_RESPONSE'],
       ['provider-malformed', 'AI_INVALID_STREAM'],
+      ['provider-stream-error', 'AI_PROVIDER_STREAM_ERROR'],
       ['provider-invalid-json', 'AI_INVALID_RESPONSE'],
       ['provider-network-error', 'AI_PROVIDER_UNREACHABLE'],
     ];
@@ -848,6 +860,9 @@ test('upstream authentication, rate-limit, server, and empty-stream failures are
       assert.equal(response.body.includes('upstream quota detail'), false);
       assert.equal(response.body.includes('upstream permission detail'), false);
       assert.equal(response.body.includes('invalid provider request detail'), false);
+      assert.equal(response.body.includes('upstream request timeout detail'), false);
+      assert.equal(response.body.includes('upstream gateway timeout detail'), false);
+      assert.equal(response.body.includes('private provider stream detail'), false);
 
       const saved = db.prepare(
         "SELECT status,error_code FROM messages WHERE conversation_id=? AND role='assistant' ORDER BY id DESC LIMIT 1",
