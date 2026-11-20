@@ -6,7 +6,7 @@
  * with the system Chromium through puppeteer-core at a desktop and a mobile
  * viewport. Covers: registration, session persistence, project creation,
  * document autosave + reload, chat unconfigured-model guidance, admin
- * monitoring/audit panels, and a 360 px mobile layout pass.
+ * monitoring/audit panels, and a 360/390/768/1280 px responsive viewport matrix.
  *
  * Usage: node scripts/e2e-smoke.mjs [--headful] [--port 4123]
  * Requires a built client: npm run build
@@ -386,6 +386,53 @@ async function main() {
     await page.goto(baseUrl + '/admin?tab=providers', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => document.body.innerText.includes('模型与 Provider'), { timeout: 20000 });
     check('Admin provider management renders', true);
+
+    // Exercise the primary workflows at the full V0.1 viewport matrix. The
+    // 360/390 widths emulate touch phones, 768 a small tablet, and 1280 desktop.
+    // These checks intentionally measure the document root, not scrollable code
+    // or editor regions, so legitimate inner scrolling is not reported as overflow.
+    const responsiveViewports = [
+      { width: 360, height: 780, isMobile: true, hasTouch: true },
+      { width: 390, height: 844, isMobile: true, hasTouch: true },
+      { width: 768, height: 900, isMobile: false, hasTouch: true },
+      { width: 1280, height: 900, isMobile: false, hasTouch: false },
+    ];
+    const responsivePages = [
+      { label: 'Chat', url: baseUrl + '/chat', selector: '.chat-composer-wrap' },
+      { label: 'Documents', url: documentUrl, selector: '.document-title-input' },
+      { label: 'Models', url: baseUrl + '/models', selector: '.model-status-card' },
+      { label: 'Admin', url: baseUrl + '/admin?tab=monitoring', selector: '.admin-main' },
+    ];
+    for (const viewport of responsiveViewports) {
+      await page.setViewport(viewport);
+      for (const route of responsivePages) {
+        await page.goto(route.url, { waitUntil: 'domcontentloaded' });
+        await page.waitForSelector(route.selector, { timeout: 20000 });
+        const layout = await page.evaluate((selector) => {
+          const root = document.documentElement;
+          const body = document.body;
+          const viewportWidth = root.clientWidth || window.innerWidth;
+          const scrollWidth = Math.max(root.scrollWidth, body.scrollWidth);
+          const target = document.querySelector(selector);
+          const rect = target?.getBoundingClientRect();
+          const targetVisible = Boolean(
+            target && rect && rect.width > 0 && rect.height > 0
+            && rect.right > 0 && rect.left < viewportWidth,
+          );
+          return {
+            overflow: Math.max(0, scrollWidth - viewportWidth),
+            viewportWidth,
+            scrollWidth,
+            targetVisible,
+          };
+        }, route.selector);
+        check(
+          route.label + ' fits ' + viewport.width + 'px and keeps its primary control visible',
+          layout.overflow <= 2 && layout.targetVisible,
+          'overflow=' + layout.overflow + 'px controlVisible=' + layout.targetVisible,
+        );
+      }
+    }
 
     // The pre-login /auth/me probe legitimately returns 401 and offline font loads
     // fail; neither is an application defect.
