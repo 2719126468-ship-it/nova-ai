@@ -1,6 +1,6 @@
 # NOVA AI 开发路线图
 
-- Updated: 2026-11-07
+- Updated: 2026-11-20
 - 当前基线：`main`
 - 详细任务状态以 [NOVA Development Tracker](DEVELOPMENT-TRACKER.md) 为准。
 - 当前策略：先完成 V0.1 发布门槛与 V0.2 工作流闭环，再推进 V0.3 Research；不重建已工作的核心模块。
@@ -17,14 +17,14 @@
 - [x] Markdown/GFM、代码高亮、代码块复制
 - [x] 多 OpenAI-compatible Provider / Model registry、模型切换、管理员管理和密钥加密
 - [x] 模型上下文预算、Token 来源标识、输出预留和历史裁剪
-- [x] AI 用量记录、管理员统计、账户数据导出与账户删除
-- [x] SQLite 版本迁移、关键 API 权限与 Provider 故障回归测试
+- [x] AI 用量记录、基础错误聚合、账户数据导出与账户删除；管理员按天/用户/模型统计仍在 PR #19（CI 已通过，未合并）
+- [x] SQLite 版本迁移、关键 API 权限与 Provider 故障回归基础覆盖；旧库升级夹具仍在 PR #18（CI 已通过，未合并）
 
 发布验收仍待：
-- [ ] Playwright 端到端和 Android 浏览器真机回归（包括 Mate 20 Pro）
+- [ ] 补齐完整 Chat 历史/停止/错误恢复端到端流程，并进行 Android 浏览器/WebView 真机回归（包括 Mate 20 Pro）；CI 使用 Puppeteer + Chromium 覆盖 360/390/768/1280 px 的 Chat、Documents、Models、Admin 基础布局。
 - [x] 生产 CSP、严格 Origin 策略和第三方模型数据处理告知（`/privacy`）
-- [ ] SQLite 备份/恢复演练、部署环境验证和日志/错误监控
-- [ ] 管理员审计日志、完整依赖与历史密钥扫描
+- [x] SQLite 本机备份/恢复演练与进程内日志/错误监控（见 `docs/DEPLOYMENT.md`、`docs/audits/B4-01-VERIFICATION.md`）；生产部署环境验证与外部告警送达仍待完成
+- [x] 管理员审计日志与 CI 全历史密钥扫描；完整依赖/公告复核及独立安全审查仍待完成
 - [ ] 独立安全审查；CI 通过不等于完成渗透测试或生产安全认证
 
 ## V0.2 — AI 工作空间
@@ -49,7 +49,7 @@
 
 ## V0.3 — Research 与 Provider 扩展
 
-**进度：真实搜索适配与带引用的来源整理已实现于 Draft PR #16；等待审查与真实 Provider 配置验证。**
+**进度：真实搜索适配与带引用的来源整理已随 PR #16 于 2026-11-07 合并；真实 Provider 部署连接仍待验证。**
 
 - [ ] 接入真实搜索 Provider，保留来源 URL、标题、时间和检索元数据（SearXNG/Brave 适配已实现；真实部署连接未验收）
 - [ ] 研究计划、可验证引用、结构化报告、保存与 Markdown 导出（来源选择、笔记、综合分析输入、引用索引和 Markdown 保存已实现；由模型自动生成研究计划仍待实现；基于所选来源的带引用草稿已实现（标注为模型综合））
@@ -81,7 +81,7 @@ Research 文章 CMS 与本地分类/筛选不等于已接入互联网搜索；�
 ## 最近验收记录
 
 - 2026-11-07：PR #13 merged，Project Context 和受控文本资料管理进入 `main`。
-- 2026-11-07：Draft PR #16 添加 Research 搜索/引用工作流、Documents 小范围可靠性修复和源码安全/移动端审查记录；CI run #95 通过 38/38 API tests 与生产构建。PR #16 未合并，真实 Provider 和 Android 真机验收仍待完成。
+- 2026-11-07：PR #16 合并，包含 Research 搜索/引用工作流、Documents 小范围可靠性修复和源码安全/移动端审查记录；CI run #95 通过 38/38 API tests 与生产构建。真实 Provider 和 Android 真机验收仍待完成。
 - PR #13 CI run #86：33/33 API tests passed；production web build passed。
 - 主分支合并后 CI 继续运行；不在该 run 完成前把 main 标记为已完成最终验证。
 - 包版本保持 `0.1.0`，仅在对应版本的发布验收完成后升级。
