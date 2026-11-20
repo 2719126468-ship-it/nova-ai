@@ -189,13 +189,13 @@ AI_DEFAULT_MODEL=
 ```bash
 npm test              # 47 项 API 集成测试（临时 SQLite，不触碰开发库）
 npm run build         # 生产前端构建
-npm run e2e           # 浏览器端到端 27 项检查（需 Chromium；CHROMIUM_PATH 可指定）
+npm run e2e           # 浏览器端到端检查（需 Chromium；CHROMIUM_PATH 可指定）
 npm run scan:secrets  # 工作区 + Git 全历史密钥扫描
 npm run db:backup     # 在线备份 + 完整性校验 + sha256 清单
 npm run db:verify     # 校验当前库或指定备份
 ```
 
-`npm run e2e` 会用真实 API 进程托管 `client/dist`，再以系统 Chromium 在桌面与 360 px 视口执行注册、会话保持、Chat 未配置提示、Research 未配置提示、项目建项与资料上传/下载/上下文开关、文档自动保存与归档恢复、移动端布局和 Admin 三个面板等流程。CI 中 `verify` 与 `browser-smoke` 两个 job 分别执行。
+`npm run e2e` 会用真实 API 进程托管 `client/dist`，再以系统 Chromium 在 360/390/768/1280 px 视口执行注册、会话保持、Chat 未配置提示、Research 未配置提示、项目建项与资料上传/下载/上下文开关、文档自动保存与归档恢复、移动端布局和 Admin 三个面板等流程。CI 中 `verify` 与 `browser-smoke` 两个 job 分别执行。
 
 ## 安全基线
 
