@@ -57,7 +57,9 @@ export default function Chat() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => (
+    typeof window === 'undefined' || !window.matchMedia || window.matchMedia('(min-width: 761px)').matches
+  ));
   const [modelInfo, setModelInfo] = useState(null);
   const [modelLoading, setModelLoading] = useState(true);
   const [modelLoadError, setModelLoadError] = useState(null);
@@ -80,6 +82,23 @@ export default function Chat() {
   const endRef = useRef(null);
   const abortRef = useRef(null);
   const pendingSequence = useRef(0);
+
+  useEffect(() => {
+    if (!window.matchMedia) return undefined;
+    const desktopQuery = window.matchMedia('(min-width: 761px)');
+    const syncSidebarForViewport = () => setSidebarOpen(desktopQuery.matches);
+    syncSidebarForViewport();
+    if (desktopQuery.addEventListener) desktopQuery.addEventListener('change', syncSidebarForViewport);
+    else desktopQuery.addListener(syncSidebarForViewport);
+    return () => {
+      if (desktopQuery.removeEventListener) desktopQuery.removeEventListener('change', syncSidebarForViewport);
+      else desktopQuery.removeListener(syncSidebarForViewport);
+    };
+  }, []);
+
+  function closeSidebarOnMobile() {
+    if (window.matchMedia && window.matchMedia('(max-width: 760px)').matches) setSidebarOpen(false);
+  }
 
   const loadConversations = useCallback(async () => {
     const data = await api('/api/v1/conversations');
@@ -486,13 +505,14 @@ export default function Chat() {
   return <main className={'chat-workspace ' + (sidebarOpen ? '' : 'chat-sidebar-hidden')}>
     <aside className="chat-sidebar">
       <div className="chat-sidebar-head"><span>WORKSPACE</span><button className="icon-button" onClick={() => setSidebarOpen(false)} aria-label="收起侧边栏"><PanelLeftClose size={17} /></button></div>
-      <button className="new-chat-button" onClick={createConversation}><CirclePlus size={17} /> 新建对话 <span>⌘ K</span></button>
+      <button className="new-chat-button" onClick={() => { void createConversation(); closeSidebarOnMobile(); }}><CirclePlus size={17} /> 新建对话 <span>⌘ K</span></button>
       <div className="chat-history-label">最近对话</div>
-      <div className="chat-history-list">{conversations.map((conversation) => <div key={conversation.id} className={'history-row ' + (activeId === conversation.id ? 'active' : '')}><button className="history-item" onClick={() => openConversation(conversation.id)}><MessageSquare size={15} /><span>{conversation.title || '新对话'}</span></button><button className="history-rename" aria-label="重命名对话" title="重命名" onClick={(event) => renameConversation(conversation.id, event)}><Pencil size={13} /></button><button className="history-delete" aria-label="删除对话" onClick={(event) => deleteConversation(conversation.id, event)}><Trash2 size={13} /></button></div>)}
+      <div className="chat-history-list">{conversations.map((conversation) => <div key={conversation.id} className={'history-row ' + (activeId === conversation.id ? 'active' : '')}><button className="history-item" onClick={() => { void openConversation(conversation.id); closeSidebarOnMobile(); }}><MessageSquare size={15} /><span>{conversation.title || '新对话'}</span></button><button className="history-rename" aria-label="重命名对话" title="重命名" onClick={(event) => renameConversation(conversation.id, event)}><Pencil size={13} /></button><button className="history-delete" aria-label="删除对话" onClick={(event) => deleteConversation(conversation.id, event)}><Trash2 size={13} /></button></div>)}
         {!conversations.length && !loading && <div className="history-empty">还没有对话记录。<br />创建一个新对话开始探索。</div>}
       </div>
       <div className="chat-sidebar-bottom"><div className="chat-user-avatar">{user?.name?.slice(0, 1) || 'N'}</div><div><strong>{user?.name}</strong><span>个人工作区</span></div><MoreHorizontal size={17} /></div>
     </aside>
+    {sidebarOpen && <button type="button" className="chat-sidebar-backdrop" aria-label="关闭对话历史" onClick={() => setSidebarOpen(false)} />}
     <section className="chat-main">
       <div className="chat-topbar"><div className="chat-topbar-left">{!sidebarOpen && <button className="icon-button" onClick={() => setSidebarOpen(true)} aria-label="展开侧边栏"><Menu size={18} /></button>}<div className="chat-model-badge"><span className="model-spark">✳</span>{selectableModels.length ? <select className="chat-model-select" aria-label="选择模型" value={selectedModel?.id || ''} onChange={(event) => setSelectedModelId(event.target.value)} disabled={sending}>{selectableModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}</select> : <strong>{modelName}</strong>}<ChevronDown size={14} /></div><span className="chat-beta">PREVIEW</span></div><button className="chat-top-action" onClick={createConversation}><CirclePlus size={15} /> 新对话</button></div>
       {saveDocumentDialog && <div className="chat-document-dialog-overlay">
