@@ -79,6 +79,7 @@ export default function Chat() {
   const [savedDocumentsByMessage, setSavedDocumentsByMessage] = useState({});
   const endRef = useRef(null);
   const abortRef = useRef(null);
+  const sendingRef = useRef(false);
   const pendingSequence = useRef(0);
 
   const loadConversations = useCallback(async () => {
@@ -324,7 +325,7 @@ export default function Chat() {
 
   async function submitMessage(contentValue, editId = null, retryId = null) {
     const content = contentValue.trim();
-    if (!content || sending) return;
+    if (!content || sending || sendingRef.current) return;
     if (modelLoading) {
       setError('正在读取模型列表，请稍后再发送。');
       return;
@@ -344,6 +345,7 @@ export default function Chat() {
 
     setError('');
     setContextNotice('');
+    sendingRef.current = true;
     setSending(true);
     const controller = new AbortController();
     abortRef.current = controller;
@@ -419,7 +421,12 @@ export default function Chat() {
             }
           } else {
             setMessages((current) => current.map((message) => message.id === pendingId
-              ? { ...message, status: cancelled ? 'cancelled' : 'failed', error_code: packet.data?.code || null }
+              ? {
+                ...message,
+                id: packet.data?.messageId || message.id,
+                status: cancelled ? 'cancelled' : 'failed',
+                error_code: packet.data?.code || null,
+              }
               : message));
           }
         }
@@ -458,8 +465,14 @@ export default function Chat() {
     } finally {
       if (!completed && !controller.signal.aborted) setMessages((current) => current.filter((message) => message.id !== pendingId));
       if (abortRef.current === controller) abortRef.current = null;
+      sendingRef.current = false;
       setSending(false);
     }
+  }
+
+  // Prevent the stop-button click default from submitting the newly rendered send button.
+  function stopGeneration() {
+    abortRef.current?.abort();
   }
 
   function sendMessage(event) {
@@ -551,7 +564,7 @@ export default function Chat() {
             <HighlightedMarkdown content={message.content} />
           </Suspense>
         ) : <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>}</div></div></div>)}<div ref={endRef} /></div>}</div></div>
-      <div className="chat-composer-wrap"><ErrorNotice>{error}</ErrorNotice>{contextNotice && <div className="context-budget-notice" role="status">{contextNotice}</div>}<form className="chat-composer" onSubmit={sendMessage}>{editingMessageId && <div className="composer-edit-hint">重新生成成功后，会删除这条消息后面的对话内容；失败或停止会保留原对话。</div>}<textarea value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={editingMessageId ? '编辑消息并重新生成…' : '向 NOVA 发送消息…'} rows={1} disabled={sending} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(e); } }} /><div className="composer-bottom"><span><Sparkles size={13} /> {selectedModel?.configured && selectedModel?.status === 'unknown' ? '模型已配置 · 上游状态未验证' : selectedModel ? '已选择模型 · 上游状态未知' : '模型服务由服务器配置'}</span>{editingMessageId && !sending && <button className="composer-cancel" type="button" onClick={cancelEditMessage}>取消编辑</button>}{sending ? <button type="button" onClick={stopGeneration} aria-label="停止生成"><Square size={15} /></button> : <button type="submit" disabled={!draft.trim()} aria-label="发送消息"><Send size={17} /></button>}</div></form><div className="chat-disclaimer">NOVA 可能会出错。重要信息请自行核实。发送的内容会交给所配置的模型服务处理，详见 <Link to="/privacy">数据与第三方说明</Link>。模型未配置时不会生成虚假回答。</div></div>
+      <div className="chat-composer-wrap"><ErrorNotice>{error}</ErrorNotice>{contextNotice && <div className="context-budget-notice" role="status">{contextNotice}</div>}<form className="chat-composer" onSubmit={sendMessage}>{editingMessageId && <div className="composer-edit-hint">重新生成成功后，会删除这条消息后面的对话内容；失败或停止会保留原对话。</div>}<textarea value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={editingMessageId ? '编辑消息并重新生成…' : '向 NOVA 发送消息…'} rows={1} disabled={sending} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(e); } }} /><div className="composer-bottom"><span><Sparkles size={13} /> {selectedModel?.configured && selectedModel?.status === 'unknown' ? '模型已配置 · 上游状态未验证' : selectedModel ? '已选择模型 · 上游状态未知' : '模型服务由服务器配置'}</span>{editingMessageId && !sending && <button className="composer-cancel" type="button" onClick={cancelEditMessage}>取消编辑</button>}{sending ? <button type="button" onClick={(event) => { event.preventDefault(); stopGeneration(); }} aria-label="停止生成"><Square size={15} /></button> : <button type="submit" disabled={!draft.trim()} aria-label="发送消息"><Send size={17} /></button>}</div></form><div className="chat-disclaimer">NOVA 可能会出错。重要信息请自行核实。发送的内容会交给所配置的模型服务处理，详见 <Link to="/privacy">数据与第三方说明</Link>。模型未配置时不会生成虚假回答。</div></div>
     </section>
   </main>;
 }
