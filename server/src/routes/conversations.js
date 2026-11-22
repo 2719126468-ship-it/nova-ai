@@ -330,6 +330,8 @@ async function streamAssistantResponse(res, prompt, pending, generationKey, hook
       ).get(pending.assistantMessageId);
     }
     finishUsageRecord(hooks.usageRecord, { status: 'succeeded', usage: providerUsage });
+    // Release before the terminal event so an immediate next turn cannot race finally cleanup.
+    activeGenerations.delete(generationKey);
     sendSse(res, 'message_complete', { assistantMessage, requestId: hooks.usageRecord?.requestId || null });
     if (!res.writableEnded && !res.destroyed) res.end();
   } catch (error) {
@@ -348,6 +350,7 @@ async function streamAssistantResponse(res, prompt, pending, generationKey, hook
     });
 
     if (!clientDisconnected && !res.writableEnded && !res.destroyed) {
+      activeGenerations.delete(generationKey);
       sendSse(res, cancelled ? 'message_cancelled' : 'message_error', {
         messageId: pending.assistantMessageId,
         requestId: hooks.usageRecord?.requestId || null,

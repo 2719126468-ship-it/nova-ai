@@ -53,3 +53,7 @@ jobs:
         env:
           CHROMIUM_PATH: ${{ steps.chrome.outputs.chrome-path }}
         run: npm run e2e
+      - name: Chat streaming lifecycle browser test
+        env:
+          CHROMIUM_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: node scripts/e2e-chat-lifecycle.mjs
