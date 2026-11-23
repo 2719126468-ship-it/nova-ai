@@ -244,11 +244,15 @@ export async function streamAssistantReply(messages, options = {}) {
       }
 
       buffer += decoder.decode();
-      if (!doneSignal && buffer.trim()) consumeBlock(buffer);
+      if (!doneSignal && buffer.trim()) doneSignal = consumeBlock(buffer);
     } finally {
       reader.releaseLock();
     }
 
+    if (!doneSignal) {
+      throw new ProviderRequestError('AI_INVALID_STREAM', 502,
+        '模型服务在发送完成标记前结束了流式响应。');
+    }
     if (!content.trim()) throw createEmptyResponseError();
     return content;
   }, options);
