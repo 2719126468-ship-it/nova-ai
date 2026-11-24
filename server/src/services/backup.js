@@ -7,7 +7,12 @@ function sha256File(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
 
-export function verifyDatabase(file) {
+/**
+ * Read-only integrity check. Sidecar cleanup is opt-in and only safe for a
+ * newly-created backup artifact that has no other open database connections.
+ * Never enable it for DB_PATH: live WAL files may contain committed writes.
+ */
+export function verifyDatabase(file, { cleanupSidecars = false } = {}) {
   if (!fs.existsSync(file)) throw new Error('DATABASE_NOT_FOUND: ' + file);
   const handle = new Database(file, { readonly: true, fileMustExist: true });
   try {
@@ -20,10 +25,11 @@ export function verifyDatabase(file) {
     return { ok: integrity === 'ok', integrity, tables, schemaVersion: migrations, bytes: fs.statSync(file).size };
   } finally {
     handle.close();
-    // Opening a WAL database creates -shm/-wal sidecars; a backup artifact must be a single file.
-    for (const suffix of ['-shm', '-wal']) {
-      const sidecar = file + suffix;
-      if (fs.existsSync(sidecar)) fs.rmSync(sidecar, { force: true });
+    if (cleanupSidecars) {
+      for (const suffix of ['-shm', '-wal']) {
+        const sidecar = file + suffix;
+        if (fs.existsSync(sidecar)) fs.rmSync(sidecar, { force: true });
+      }
     }
   }
 }
@@ -57,7 +63,7 @@ export async function backupDatabase({ dbPath, outDir, keep = 7 }) {
   } finally {
     source.close();
   }
-  const report = verifyDatabase(file);
+  const report = verifyDatabase(file, { cleanupSidecars: true });
   if (!report.ok) {
     fs.rmSync(file, { force: true });
     throw new Error('BACKUP_INTEGRITY_FAILED: ' + report.integrity);

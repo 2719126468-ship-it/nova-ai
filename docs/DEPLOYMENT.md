@@ -55,6 +55,8 @@ BACKUP_DIR=/mnt/volume/backups npm run db:backup
 建议：每日一次备份 + 每次升级前手动备份，并把备份同步到与数据库不同的物理位置。
 
 ## 6. 恢复演练
+> **在线数据库验证注意：** `npm run db:verify` 对当前 `DB_PATH` 执行只读完整性检查，不会删除数据库的 `-wal` / `-shm` 文件。活动 WAL 可能包含尚未 checkpoint 到主数据库文件的已提交事务；不要手动删除活动数据库的 sidecar。备份流程只清理自己刚创建且独占的备份文件在校验期间产生的 sidecar。
+
 
 ```bash
 npm run db:verify -- backups/nova-2026-11-07T14-05-01-969Z.sqlite

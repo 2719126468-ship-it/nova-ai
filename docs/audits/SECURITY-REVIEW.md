@@ -104,6 +104,13 @@ PR #4 的 IP 限流暂缓。应用当前未配置可信反向代理跳数；若�
 - Android 小屏样式已检查并局部改善，但没有执行 Android 真机或不同 WebView 版本测试。该部分不得标记为设备验收完成。
 - Draft PR #16 CI run #95：38/38 API tests passed，`npm ci` 依赖审计 0 vulnerabilities，Vite production build passed。该结果不是外部真实搜索 Provider 联通证明，也不是安全认证。
 
+## 10. 2026-11-24 — SQLite WAL sidecar 安全修复
+
+- 修复 `verifyDatabase()` 对任意输入数据库都删除 `-wal` / `-shm` sidecar 的问题。该函数也会被 `npm run db:verify` 用于当前 `DB_PATH`；若 API 进程仍持有 WAL 数据库连接，删除 sidecar 可能导致后续连接出现 I/O 错误或无法读取已提交事务。
+- 默认验证现在只读并保留 sidecar。只有 `backupDatabase()` 对本次新建、独占的备份产物验证时，才显式启用 sidecar 清理。
+- 新增临时 SQLite WAL 回归测试：保持一个写连接打开，在 WAL 中提交数据后执行验证，断言 `-wal` / `-shm` 均保留且原连接和新只读连接仍能读到该记录；另验证备份产物仍是可独立读取的单文件。
+- 不涉及 schema、迁移、真实数据库或用户数据。该修复需要 PR CI 的 API 测试和构建通过；不替代生产备份恢复演练或独立安全审查。
+
 ## 9. 2026-11-07 B4-01 硬化实施
 
 | 原风险 | 当前状态 | 证据 / 剩余边界 |
