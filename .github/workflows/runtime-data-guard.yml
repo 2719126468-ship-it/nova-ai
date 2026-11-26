@@ -1,0 +1,25 @@
+name: Runtime Data Guard
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-db-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test runtime database path detection
+        run: node --test scripts/check-tracked-runtime-db.test.mjs
+      - name: Reject tracked runtime SQLite artifacts
+        run: node scripts/check-tracked-runtime-db.mjs
