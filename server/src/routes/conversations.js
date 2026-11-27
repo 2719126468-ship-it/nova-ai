@@ -565,6 +565,20 @@ router.post('/:id/messages', generationLimiter, async (req, res, next) => {
         });
         error.requestId = usageRecord.requestId;
         if (cancelled || res.destroyed) return;
+
+        // Keep a failed legacy JSON turn recoverable after a Provider error.
+        // Client-disconnected requests remain intentionally unpersisted.
+        const errorCode = error?.code || 'AI_PROVIDER_ERROR';
+        const persistFailedTurn = db.transaction(() => {
+          db.prepare('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)')
+            .run(conversationId, 'user', parsed.data.content);
+          db.prepare(
+            "INSERT INTO messages(conversation_id,role,content,status,error_code) VALUES(?,?,'','failed',?)",
+          ).run(conversationId, 'assistant', errorCode);
+          db.prepare("UPDATE conversations SET title=CASE WHEN title='新对话' THEN ? ELSE title END,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+            .run(parsed.data.content.slice(0, 42), conversationId);
+        });
+        persistFailedTurn();
         throw error;
       } finally {
         res.removeListener('close', onClose);
